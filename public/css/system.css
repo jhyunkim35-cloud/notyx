@@ -1,0 +1,613 @@
+/* ═══════════════════════════════════════════════════════════════
+   Notyx design system — system.css
+   Prefix: ny- (guarantees zero collision with legacy selectors
+   while both systems coexist during the UI migration).
+   Zero box-shadow. Zero gradients. Borders are 1px solid.
+   Transitions 120-180ms ease-out (two documented exceptions below).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Tokens ────────────────────────────────────────────────────── */
+
+:root {
+  /* dark (default) */
+  --ny-bg-base: #0e0e10;
+  --ny-bg-surface: #17171a;
+  --ny-bg-raised: #1e1e22;
+  --ny-border: #2a2a2f;
+  --ny-border-strong: #3b3b42;
+  --ny-text-primary: #ececee;
+  --ny-text-secondary: #a3a3ac;
+  --ny-text-tertiary: #6b6b74;
+  --ny-accent: #7c3aed;
+  --ny-accent-hover: #8e53f0;
+  --ny-accent-tint: color-mix(in srgb, var(--ny-accent) 12%, transparent);
+  --ny-success: #4ade80;
+  --ny-warning: #fbbf24;
+  --ny-danger: #f87171;
+  --ny-highlight-bg: rgba(251, 191, 36, 0.22); /* 형광펜 — signature, amber wash */
+  --ny-scrim: rgba(0, 0, 0, 0.5);
+
+  /* shared (theme-independent) */
+  --ny-space-1: 4px;
+  --ny-space-2: 8px;
+  --ny-space-3: 12px;
+  --ny-space-4: 16px;
+  --ny-space-5: 24px;
+  --ny-space-6: 32px;
+  --ny-space-7: 48px;
+  --ny-space-8: 64px;
+  --ny-radius-sm: 6px;
+  --ny-radius-md: 10px;
+  --ny-radius-lg: 14px;
+  --ny-font-size-xs: 0.75rem;
+  --ny-font-size-sm: 0.8125rem;
+  --ny-font-size-base: 0.9rem;
+  --ny-font-size-md: 1rem;
+  --ny-font-size-lg: 1.125rem;
+  --ny-font-size-xl: 1.375rem;
+  --ny-font-size-2xl: 1.75rem;
+  --ny-font-weight-normal: 400;
+  --ny-font-weight-medium: 500;
+  --ny-font-weight-semibold: 600;
+  --ny-transition: 140ms ease-out;
+  --ny-font-sans: 'Pretendard Variable', Pretendard, -apple-system, 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
+}
+
+:root.light {
+  --ny-bg-base: #f7f7f8;
+  --ny-bg-surface: #ffffff;
+  --ny-bg-raised: #fcfcfd;
+  --ny-border: #e4e4e8;
+  --ny-border-strong: #d1d1d7;
+  --ny-text-primary: #17171a;
+  --ny-text-secondary: #5f5f68;
+  --ny-text-tertiary: #9494a0;
+  --ny-accent: #7c3aed;
+  --ny-accent-hover: #6d28d9;
+  --ny-accent-tint: color-mix(in srgb, var(--ny-accent) 10%, transparent);
+  --ny-success: #16a34a;
+  --ny-warning: #b45309;
+  --ny-danger: #dc2626;
+  --ny-highlight-bg: rgba(251, 191, 36, 0.35);
+  --ny-scrim: rgba(23, 23, 26, 0.4);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+
+.ny-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ny-space-2);
+  padding: 0.55em 1.1em;
+  border-radius: var(--ny-radius-md);
+  border: 1px solid transparent;
+  font-family: var(--ny-font-sans);
+  font-size: var(--ny-font-size-base);
+  font-weight: var(--ny-font-weight-medium);
+  cursor: pointer;
+  transition: background var(--ny-transition), border-color var(--ny-transition), color var(--ny-transition);
+}
+
+.ny-btn-primary {
+  background: var(--ny-accent);
+  color: white;
+}
+.ny-btn-primary:hover {
+  background: var(--ny-accent-hover);
+}
+
+.ny-btn-secondary {
+  background: var(--ny-bg-surface);
+  border-color: var(--ny-border);
+  color: var(--ny-text-primary);
+}
+.ny-btn-secondary:hover {
+  border-color: var(--ny-border-strong);
+  background: var(--ny-bg-raised);
+}
+
+.ny-btn-ghost {
+  background: transparent;
+  color: var(--ny-text-secondary);
+}
+.ny-btn-ghost:hover {
+  background: var(--ny-bg-raised);
+  color: var(--ny-text-primary);
+}
+
+.ny-btn-danger {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--ny-danger) 40%, transparent);
+  color: var(--ny-danger);
+}
+.ny-btn-danger:hover {
+  background: var(--ny-danger);
+  color: white;
+}
+
+.ny-btn-icon {
+  width: 2.25em;
+  height: 2.25em;
+  padding: 0;
+  background: transparent;
+  color: var(--ny-text-secondary);
+}
+.ny-btn-icon:hover {
+  background: var(--ny-bg-raised);
+  color: var(--ny-text-primary);
+}
+
+.ny-btn-sm {
+  font-size: var(--ny-font-size-sm);
+  padding: 0.4em 0.8em;
+}
+
+.ny-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ── Segmented control ────────────────────────────────────────── */
+
+.ny-seg {
+  display: inline-flex;
+  background: var(--ny-bg-raised);
+  border: 1px solid var(--ny-border);
+  border-radius: var(--ny-radius-md);
+  padding: 2px;
+}
+
+.ny-seg-btn {
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--ny-radius-md) - 2px);
+  color: var(--ny-text-secondary);
+  font-family: var(--ny-font-sans);
+  font-size: var(--ny-font-size-sm);
+  padding: 0.4em 0.9em;
+  cursor: pointer;
+  transition: background var(--ny-transition), color var(--ny-transition);
+}
+.ny-seg-btn:hover {
+  color: var(--ny-text-primary);
+}
+.ny-seg-btn.active {
+  background: var(--ny-bg-surface);
+  color: var(--ny-text-primary);
+  font-weight: var(--ny-font-weight-medium);
+}
+
+/* ── Tabs ──────────────────────────────────────────────────────── */
+
+.ny-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--ny-border);
+}
+
+.ny-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--ny-text-secondary);
+  font-family: var(--ny-font-sans);
+  font-size: var(--ny-font-size-base);
+  padding-block: var(--ny-space-3);
+  padding-inline: var(--ny-space-4);
+  cursor: pointer;
+  transition: color var(--ny-transition), border-color var(--ny-transition);
+}
+.ny-tab:hover {
+  color: var(--ny-text-primary);
+}
+.ny-tab.active {
+  color: var(--ny-text-primary);
+  border-bottom-color: var(--ny-accent);
+}
+
+/* ── Card ──────────────────────────────────────────────────────── */
+
+.ny-card {
+  background: var(--ny-bg-surface);
+  border: 1px solid var(--ny-border);
+  border-radius: var(--ny-radius-lg);
+  padding: var(--ny-space-5);
+}
+
+.ny-card-hover:hover {
+  border-color: var(--ny-border-strong);
+}
+
+.ny-card-selected {
+  border-color: var(--ny-accent);
+}
+
+/* ── Modal ─────────────────────────────────────────────────────── */
+
+.ny-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--ny-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ny-space-4);
+}
+
+.ny-modal {
+  background: var(--ny-bg-raised);
+  border: 1px solid var(--ny-border);
+  border-radius: var(--ny-radius-lg);
+  max-width: 480px;
+  width: 100%;
+}
+
+.ny-modal-sm {
+  max-width: 360px;
+}
+
+.ny-modal-lg {
+  max-width: 720px;
+}
+
+.ny-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ny-space-3);
+  padding: var(--ny-space-4) var(--ny-space-5);
+  font-size: var(--ny-font-size-lg);
+  font-weight: var(--ny-font-weight-semibold);
+  color: var(--ny-text-primary);
+}
+
+.ny-modal-close {
+  /* apply alongside .ny-btn-icon */
+}
+
+.ny-modal-body {
+  padding: 0 var(--ny-space-5) var(--ny-space-5);
+  color: var(--ny-text-primary);
+}
+
+.ny-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ny-space-3);
+  padding: var(--ny-space-4) var(--ny-space-5);
+  border-top: 1px solid var(--ny-border);
+}
+
+/* ── Inputs ────────────────────────────────────────────────────── */
+
+.ny-input,
+.ny-select,
+.ny-textarea {
+  background: var(--ny-bg-base);
+  border: 1px solid var(--ny-border);
+  border-radius: var(--ny-radius-md);
+  padding: 0.55em 0.9em;
+  font-family: inherit;
+  font-size: var(--ny-font-size-base);
+  color: var(--ny-text-primary);
+  transition: border-color var(--ny-transition);
+}
+.ny-input:focus,
+.ny-select:focus,
+.ny-textarea:focus {
+  border-color: var(--ny-accent);
+  outline: none;
+}
+.ny-input::placeholder,
+.ny-textarea::placeholder {
+  color: var(--ny-text-tertiary);
+}
+
+.ny-field {
+  display: block;
+}
+.ny-field label {
+  display: block;
+  font-size: var(--ny-font-size-sm);
+  font-weight: var(--ny-font-weight-medium);
+  color: var(--ny-text-secondary);
+  margin-bottom: var(--ny-space-1);
+}
+
+/* ── Badge ─────────────────────────────────────────────────────── */
+
+.ny-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--ny-font-size-xs);
+  font-weight: var(--ny-font-weight-medium);
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  background: var(--ny-bg-raised);
+  border: 1px solid var(--ny-border);
+  color: var(--ny-text-secondary);
+}
+
+.ny-badge-success {
+  background: color-mix(in srgb, var(--ny-success) 12%, var(--ny-bg-raised));
+  color: var(--ny-success);
+}
+.ny-badge-warning {
+  background: color-mix(in srgb, var(--ny-warning) 12%, var(--ny-bg-raised));
+  color: var(--ny-warning);
+}
+.ny-badge-danger {
+  background: color-mix(in srgb, var(--ny-danger) 12%, var(--ny-bg-raised));
+  color: var(--ny-danger);
+}
+.ny-badge-accent {
+  background: color-mix(in srgb, var(--ny-accent) 12%, var(--ny-bg-raised));
+  color: var(--ny-accent);
+}
+
+/* ── Chip ──────────────────────────────────────────────────────── */
+
+.ny-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--ny-font-size-sm);
+  font-weight: var(--ny-font-weight-medium);
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  background: var(--ny-bg-raised);
+  border: 1px solid var(--ny-border);
+  color: var(--ny-text-secondary);
+  cursor: pointer;
+  transition: border-color var(--ny-transition), background var(--ny-transition), color var(--ny-transition);
+}
+.ny-chip:hover {
+  border-color: var(--ny-border-strong);
+}
+.ny-chip.active {
+  background: var(--ny-accent-tint);
+  color: var(--ny-accent);
+  border-color: transparent;
+}
+
+/* ── List row ──────────────────────────────────────────────────── */
+
+.ny-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ny-space-3);
+  padding: var(--ny-space-3) var(--ny-space-4);
+  border-radius: var(--ny-radius-md);
+  transition: background var(--ny-transition), color var(--ny-transition);
+}
+.ny-row:hover {
+  background: var(--ny-bg-raised);
+}
+.ny-row.active {
+  background: var(--ny-accent-tint);
+  color: var(--ny-accent);
+}
+
+/* ── Toast ─────────────────────────────────────────────────────── */
+
+.ny-toast {
+  position: fixed;
+  bottom: var(--ny-space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ny-bg-raised);
+  border: 1px solid var(--ny-border);
+  border-radius: var(--ny-radius-md);
+  padding: var(--ny-space-3) var(--ny-space-5);
+  color: var(--ny-text-primary);
+  font-size: var(--ny-font-size-base);
+}
+
+.ny-toast-success {
+  border-left: 2px solid var(--ny-success);
+  color: var(--ny-success);
+}
+.ny-toast-error {
+  border-left: 2px solid var(--ny-danger);
+  color: var(--ny-danger);
+}
+
+/* ── Progress / spinner / skeleton ────────────────────────────── */
+
+.ny-progress {
+  background: var(--ny-bg-raised);
+  border: 1px solid var(--ny-border);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.ny-progress-fill {
+  background: var(--ny-accent);
+  height: 100%;
+  /* width set inline per instance — dynamic value */
+}
+
+/* Spinner rotation is exempt from the 120-180ms transition rule:
+   a spin animation is a continuous loop, not a state transition. */
+.ny-spinner {
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  border: 2px solid var(--ny-border);
+  border-top-color: var(--ny-accent);
+  animation: ny-spin 700ms linear infinite;
+}
+
+@keyframes ny-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Skeleton pulse is exempt from the 120-180ms transition rule for the
+   same reason as the spinner: a continuous loading loop, not a state change. */
+.ny-skeleton {
+  background: var(--ny-bg-raised);
+  border-radius: var(--ny-radius-md);
+  animation: ny-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ny-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ── Empty state ───────────────────────────────────────────────── */
+
+.ny-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ny-space-2);
+  padding: var(--ny-space-7);
+  color: var(--ny-text-secondary);
+  text-align: center;
+}
+.ny-empty > :first-child {
+  font-weight: var(--ny-font-weight-medium);
+  color: var(--ny-text-primary);
+}
+
+/* ── Upload zone ───────────────────────────────────────────────── */
+
+.ny-dropzone {
+  border: 1px dashed var(--ny-border);
+  border-radius: var(--ny-radius-lg);
+  padding: var(--ny-space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--ny-text-secondary);
+  transition: border-color var(--ny-transition), background var(--ny-transition);
+}
+.ny-dropzone.drag-over {
+  border-color: var(--ny-accent);
+  background: var(--ny-accent-tint);
+}
+
+/* ── Divider ───────────────────────────────────────────────────── */
+
+.ny-divider {
+  height: 1px;
+  background: var(--ny-border);
+  border: none;
+}
+
+/* ── Highlight (형광펜 — signature) ────────────────────────────── */
+
+.ny-hl,
+mark.ny-hl {
+  background: var(--ny-highlight-bg);
+  color: inherit;
+  padding: 0 0.15em;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* ── Quality floor ─────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--ny-accent);
+  outline-offset: 2px;
+}
+
+.ny-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   login screen — screen-scoped, ny- prefixed
+   ═══════════════════════════════════════════════════════════════ */
+
+.ny-login {
+  max-width: 420px;
+  margin: calc(var(--ny-space-8) + 48px) auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ny-space-4);
+  text-align: center;
+  font-family: var(--ny-font-sans);
+}
+
+.ny-login-logo {
+  font-size: var(--ny-font-size-2xl);
+  font-weight: var(--ny-font-weight-semibold);
+  color: var(--ny-text-primary);
+  margin: 0;
+}
+.ny-login-logo span {
+  color: var(--ny-accent);
+}
+
+.ny-login-headline {
+  font-size: var(--ny-font-size-lg);
+  font-weight: var(--ny-font-weight-normal);
+  color: var(--ny-text-primary);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.ny-login-sub {
+  font-size: var(--ny-font-size-base);
+  color: var(--ny-text-secondary);
+  margin: 0;
+}
+
+.ny-login-features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ny-space-2);
+  width: fit-content;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.ny-login-feature {
+  color: var(--ny-text-secondary);
+  font-size: var(--ny-font-size-sm);
+}
+.ny-login-feature::before {
+  content: '· ';
+}
+
+.ny-login-cta {
+  width: fit-content;
+  font-size: var(--ny-font-size-md);
+  padding: 0.7em 2em;
+}
+
+.ny-login-footnote {
+  font-size: var(--ny-font-size-xs);
+  color: var(--ny-text-tertiary);
+  margin: 0;
+}
