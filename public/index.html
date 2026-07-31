@@ -4507,13 +4507,13 @@
   </div>
 </div>
 
-// batchBuddy drag IIFE moved to /js/batch.js
+<!-- batchBuddy drag IIFE moved to /js/batch.js -->
 
-<!-- Main Content -->
-<div id="mainContent" style="margin-left:240px; margin-top:48px; padding:1.5rem; min-height:calc(100vh - 48px);">
-
-  <!-- ═══ LANDING VIEW (non-logged-in) ═══ -->
-  <div id="landingView" style="display:none; text-align:center; padding:4rem 2rem; max-width:600px; margin:0 auto;">
+<!-- ═══ LANDING VIEW (non-logged-in) ═══
+     Lives OUTSIDE #mainContent on purpose: the app shell's margin-left:240px
+     assumes a visible sidebar, but the sidebar is display:none when logged
+     out, which pushed this screen 120px right of center on >768px viewports. -->
+<div id="landingView" style="display:none; text-align:center; padding:4rem 2rem; max-width:600px; margin:48px auto 0;">
     <div style="font-size:3.5rem; margin-bottom:1rem;">📝</div>
     <h1 style="font-size:1.8rem; font-weight:800; background:linear-gradient(135deg, #a78bfa, #7c3aed, #00b4d8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:0.6rem;">Notyx</h1>
     <p style="color:var(--text-muted); font-size:1rem; line-height:1.7; margin-bottom:2rem;">PPT 슬라이드와 강의 녹취록을 업로드하면<br>AI가 시험 대비에 최적화된 학습 노트를 자동 생성합니다.</p>
@@ -4524,7 +4524,10 @@
     </div>
     <button onclick="loginWithGoogle()" style="padding:0.85rem 2.5rem; background:linear-gradient(135deg, #7c3aed, #5b8ef7); border:none; border-radius:12px; color:#fff; font-size:1rem; font-weight:700; cursor:pointer; transition:all 0.2s; box-shadow:0 4px 20px rgba(124,58,237,0.3);">🔑 Google로 시작하기</button>
     <p style="color:var(--text-dim); font-size:0.78rem; margin-top:1rem;">Google 계정으로 간편하게 로그인</p>
-  </div>
+</div>
+
+<!-- Main Content -->
+<div id="mainContent" style="margin-left:240px; margin-top:48px; padding:1.5rem; min-height:calc(100vh - 48px);">
 
   <!-- ═══ HOME VIEW ═══ -->
   <div id="homeView">
