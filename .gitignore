@@ -28,3 +28,6 @@ __pycache__/
 # reproducible from build_evalset.py; keep only the .py/.rttm/.json.
 worker/evalset/*.wav
 worker/evalset/raw/
+
+# oh-my-claudecode local state
+.omc/
