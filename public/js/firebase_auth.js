@@ -12,28 +12,30 @@ function updateAuthUI() {
   const newNoteView = document.getElementById('newNoteView');
 
   if (currentUser) {
+    document.documentElement.classList.remove('ny-logged-out');
     loginBtn.style.display = 'none';
     userInfo.style.display = 'flex';
     userName.textContent = currentUser.displayName || currentUser.email;
     userAvatar.src = currentUser.photoURL || '';
     landingView.style.display = 'none';
     sidebar.style.display = '';
-    // Show whichever view was active, default to home
-    if (newNoteView.style.display !== 'block') {
-      homeView.style.display = '';
-    }
+    // Which view to show is decided by bootAppView()/switchView() in main.js,
+    // gated on auth. Guessing here raced with it and flashed an empty home.
     syncNotesOnLogin().then(() => renderHomeView());
     const sidebarAvatar = document.getElementById('sidebarAvatar');
     const sidebarUserName = document.getElementById('sidebarUserName');
     if (sidebarAvatar) sidebarAvatar.src = currentUser.photoURL || '';
     if (sidebarUserName) sidebarUserName.textContent = currentUser.displayName || currentUser.email;
   } else {
+    document.documentElement.classList.add('ny-logged-out');
     loginBtn.style.display = '';
     userInfo.style.display = 'none';
     landingView.style.display = '';
     sidebar.style.display = 'none';
     homeView.style.display = 'none';
     newNoteView.style.display = 'none';
+    const transcriptsView = document.getElementById('transcriptsView');
+    if (transcriptsView) transcriptsView.style.display = 'none';
   }
 }
 

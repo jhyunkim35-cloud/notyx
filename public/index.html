@@ -57,7 +57,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="/css/system.css?v=1">
+  <link rel="stylesheet" href="/css/system.css?v=8">
 
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
@@ -133,12 +133,11 @@
     body {
       font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
         sans-serif;
-      background: var(--bg);
+      /* Achromatic page ground. The violet/cyan radial glows that used to sit
+         here were the only chromatic thing on the logged-out screen. */
+      background: var(--ny-canvas);
       color: var(--text);
       min-height: 100vh;
-      background-image:
-        radial-gradient(ellipse 60% 40% at 15% 15%, rgba(124, 58, 237, 0.18) 0%, transparent 60%),
-        radial-gradient(ellipse 50% 35% at 85% 85%, rgba(0, 180, 216, 0.12) 0%, transparent 60%);
     }
 
     .page {
@@ -4069,7 +4068,6 @@
       --md-em: #0369a1;
       --md-highlight: #92400e;
     }
-    :root.light body { background-image: none; }
 
     /* ── Progress wrap below topBar ──────────────── */
     .progress-wrap { top: 48px !important; left: 240px !important; z-index: 10001 !important; transform: translateY(calc(-100% - 60px)); }
@@ -4511,21 +4509,199 @@
 
 <!-- batchBuddy drag IIFE moved to /js/batch.js -->
 
-<!-- ═══ LANDING VIEW (non-logged-in) ═══
-     Lives OUTSIDE #mainContent on purpose: the app shell's margin-left:240px
-     assumes a visible sidebar, but the sidebar is display:none when logged
-     out, which pushed this screen 120px right of center on >768px viewports. -->
-<div id="landingView" class="ny-login" style="display:none">
-    <h1 class="ny-login-logo">Notyx<span aria-hidden="true">.</span></h1>
-    <p class="ny-login-headline">PPT와 녹취록이 <mark class="ny-hl">시험에 나오는 것들</mark>로 정리됩니다.</p>
-    <p class="ny-login-sub">AI가 강의 자료와 녹취록을 구조화된 학습 노트로 만들어 드려요.</p>
-    <div class="ny-login-features">
-      <div class="ny-login-feature">PPT·PDF + 녹취록 → 구조화된 학습 가이드</div>
-      <div class="ny-login-feature">교수님 강조 사항 자동 추출</div>
-      <div class="ny-login-feature">슬라이드 + 노트 분할 뷰어</div>
+<!-- ═══ LANDING VIEW (logged out) ═══
+     A standalone marketing page, not a panel inside the app shell. When
+     logged out, html.ny-logged-out removes #topBar / #sidebar / #mainContent
+     from rendering (see system.css), so this element owns the viewport and
+     brings its own header. Styling lives entirely in system.css; the inline
+     display is a JS contract with firebase_auth.js/main.js. -->
+<div id="landingView" class="ny-landing" style="display:none">
+
+  <header class="ny-nav">
+    <div class="ny-nav-inner ny-container">
+      <a class="ny-nav-brand" href="#ny-top">
+        <span class="ny-nav-mark"><svg viewBox="0 0 32 32" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 5L5 27L10 27L10 12L22 29L27 27L27 5L22 5L22 22L10 5Z" fill="currentColor"/></svg></span>
+        <span>Notyx</span>
+      </a>
+      <div class="ny-nav-actions">
+        <button class="ny-btn ny-btn-ghost ny-btn-icon" type="button" onclick="toggleTheme()" aria-label="밝은 테마와 어두운 테마 전환">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button class="ny-btn ny-btn-primary" type="button" onclick="loginWithGoogle()">Google로 시작하기</button>
+      </div>
     </div>
-    <button class="ny-btn ny-btn-primary ny-login-cta" onclick="loginWithGoogle()">Google로 시작하기</button>
-    <p class="ny-login-footnote">Google 계정으로 간편하게 로그인</p>
+  </header>
+
+  <main id="ny-top">
+
+    <section class="ny-section ny-hero">
+      <div class="ny-container ny-hero-inner">
+        <h1 class="ny-hero-title">PPT와 강의 녹음이<br><mark class="ny-hl">시험에 나오는 것들</mark>로 정리됩니다.</h1>
+        <p class="ny-hero-sub">AI가 강의 자료와 녹음을 함께 읽고, 교수님이 강조한 것을 중심으로 학습 노트를 만듭니다. 시험을 앞둔 대학생을 위한 도구입니다.</p>
+        <div class="ny-hero-cta">
+          <button class="ny-btn ny-btn-primary ny-btn-lg" type="button" onclick="loginWithGoogle()">Google로 시작하기</button>
+          <a class="ny-btn ny-btn-secondary ny-btn-lg" href="#ny-features">기능 보기</a>
+        </div>
+        <p class="ny-hero-note">Google 계정으로 바로 시작 · 설치 없이 브라우저에서</p>
+      </div>
+    </section>
+
+    <section class="ny-section ny-section-alt" id="ny-preview">
+      <div class="ny-container">
+        <div class="ny-section-head">
+          <h2 class="ny-section-title">만들어지는 노트는 이렇게 생겼습니다</h2>
+          <p class="ny-section-sub">실제 노트 화면의 예시입니다.</p>
+        </div>
+        <div class="ny-preview">
+          <div class="ny-preview-bar">
+            <span class="ny-preview-dot"></span>
+            <span class="ny-preview-dot"></span>
+            <span class="ny-preview-dot"></span>
+            <span class="ny-preview-name">유기화학 3주차 · 카르보닐 화합물의 친핵성 첨가</span>
+          </div>
+          <div class="ny-preview-body">
+            <div class="ny-preview-slide">
+              <div class="ny-preview-slide-frame">
+                <span class="ny-preview-slide-line is-head"></span>
+                <span class="ny-preview-slide-line"></span>
+                <span class="ny-preview-slide-line"></span>
+                <span class="ny-preview-slide-line is-short"></span>
+                <span class="ny-preview-slide-line"></span>
+                <span class="ny-preview-slide-line is-short"></span>
+              </div>
+              <p class="ny-preview-note-p">슬라이드 14 / 32</p>
+            </div>
+            <div class="ny-preview-note">
+              <h3 class="ny-preview-note-h">핵심 정리</h3>
+              <p class="ny-preview-note-p">슬라이드 12–18 · 녹음 24:10–41:35</p>
+              <ul class="ny-preview-list">
+                <li>친핵성 첨가는 카르보닐 탄소의 부분 양전하에서 시작한다</li>
+                <li>입체 장애가 크면 반응 속도가 떨어진다 — 강의 중 2회 강조</li>
+                <li>그리냐르 시약과의 반응은 메커니즘까지 물어볼 수 있다</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ny-section" id="ny-pain">
+      <div class="ny-container">
+        <div class="ny-section-head">
+          <h2 class="ny-section-title">이런 적, 있지 않나요?</h2>
+        </div>
+        <ul class="ny-list-check ny-measure">
+          <li>필기는 했는데, 뭐가 중요한지 나중에 보면 모르겠다</li>
+          <li>녹음은 해뒀는데 다시 들을 시간이 없다</li>
+          <li>PPT와 필기와 녹음이 따로 놀아서 시험 직전에 처음부터 다시 정리한다</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="ny-section ny-section-alt" id="ny-inputs">
+      <div class="ny-container">
+        <div class="ny-section-head">
+          <p class="ny-eyebrow">INPUT</p>
+          <h2 class="ny-section-title">넣을 수 있는 것</h2>
+          <p class="ny-section-sub">이미 가지고 있는 자료를 그대로 올리면 됩니다.</p>
+        </div>
+        <div class="ny-grid-cards">
+          <div class="ny-card">
+            <h3 class="ny-feature-title">발표 자료</h3>
+            <p class="ny-feature-desc">.pptx · .pdf · .docx 파일을 슬라이드 단위로 읽습니다.</p>
+          </div>
+          <div class="ny-card">
+            <h3 class="ny-feature-title">필기 · 슬라이드 사진</h3>
+            <p class="ny-feature-desc">여러 장을 한 번에 올려도 순서대로 이어서 읽습니다.</p>
+          </div>
+          <div class="ny-card">
+            <h3 class="ny-feature-title">강의 녹음</h3>
+            <p class="ny-feature-desc">브라우저에서 바로 녹음하거나, 오디오 파일을 올립니다.</p>
+          </div>
+          <div class="ny-card">
+            <h3 class="ny-feature-title">녹취록 텍스트</h3>
+            <p class="ny-feature-desc">이미 텍스트가 있다면 붙여넣기만 하면 됩니다.</p>
+          </div>
+          <div class="ny-card">
+            <h3 class="ny-feature-title">노션 페이지</h3>
+            <p class="ny-feature-desc">마크다운(.md · .zip)으로 내보낸 페이지를 그대로 읽습니다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ny-section" id="ny-features">
+      <div class="ny-container">
+        <div class="ny-section-head">
+          <p class="ny-eyebrow">FEATURES</p>
+          <h2 class="ny-section-title">노트가 만들어지기까지</h2>
+        </div>
+        <div class="ny-stack ny-measure">
+          <div class="ny-feature">
+            <span class="ny-feature-num">01</span>
+            <div class="ny-feature-body">
+              <h3 class="ny-feature-title">자료와 녹음을 하나로 붙입니다</h3>
+              <p class="ny-feature-desc">슬라이드와 그 시점의 설명을 같이 읽습니다. "이거", "여기" 같은 지시어가 어느 슬라이드를 가리키는지 찾아서 연결합니다.</p>
+            </div>
+          </div>
+          <div class="ny-feature">
+            <span class="ny-feature-num">02</span>
+            <div class="ny-feature-body">
+              <h3 class="ny-feature-title">교수님이 강조한 것을 표시합니다</h3>
+              <p class="ny-feature-desc">발화자 번호를 지정해두면 교수님 발화를 따로 읽고, 반복해서 강조한 지점을 노트에 남깁니다.</p>
+            </div>
+          </div>
+          <div class="ny-feature">
+            <span class="ny-feature-num">03</span>
+            <div class="ny-feature-body">
+              <h3 class="ny-feature-title">슬라이드와 노트를 나란히 봅니다</h3>
+              <p class="ny-feature-desc">왼쪽에 슬라이드, 오른쪽에 노트. 노트의 문장에서 근거가 된 슬라이드로 바로 이동합니다.</p>
+            </div>
+          </div>
+          <div class="ny-feature">
+            <span class="ny-feature-num">04</span>
+            <div class="ny-feature-body">
+              <h3 class="ny-feature-title">노트에서 바로 문제를 만듭니다</h3>
+              <p class="ny-feature-desc">정리된 노트로 객관식과 서술형 문제를 만들고, 답안 채점까지 합니다.</p>
+            </div>
+          </div>
+          <div class="ny-feature">
+            <span class="ny-feature-num">05</span>
+            <div class="ny-feature-body">
+              <h3 class="ny-feature-title">잊을 때쯤 다시 꺼내줍니다</h3>
+              <p class="ny-feature-desc">복습 간격을 계산해서, 오늘 봐야 할 것만 골라 보여줍니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ny-section ny-section-alt" id="ny-more">
+      <div class="ny-container">
+        <div class="ny-section-head">
+          <h2 class="ny-section-title">이게 다가 아니에요</h2>
+        </div>
+        <ul class="ny-list-check ny-measure">
+          <li>시험 일정에 맞춰 무엇을 언제 볼지 계획 세우기</li>
+          <li>시간표에 강의를 올려두고 노트와 이어 보기</li>
+          <li>스터디 룸에서 같은 수업 듣는 사람들과 함께 보기</li>
+          <li>녹취록을 따로 보관하고 나중에 다시 노트로 만들기</li>
+          <li>폴더로 과목별 정리</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="ny-section ny-closing">
+      <div class="ny-container">
+        <h2 class="ny-closing-title">다음 시험 전에 한 번 써보세요</h2>
+        <div class="ny-hero-cta">
+          <button class="ny-btn ny-btn-primary ny-btn-lg" type="button" onclick="loginWithGoogle()">Google로 시작하기</button>
+        </div>
+        <p class="ny-closing-note">Google 계정으로 로그인합니다. 만든 노트는 본인 계정에만 저장됩니다.</p>
+      </div>
+    </section>
+
+  </main>
 </div>
 
 <!-- Main Content -->
@@ -5027,14 +5203,14 @@
 <script defer src="/js/home_view.js?v=u18tsearch"></script>
 <script defer src="/js/transcripts_view.js?v=u18pick"></script>
 <script defer src="/js/bulk.js?v=u15polish"></script>
-<script defer src="/js/firebase_auth.js?v=u15polish"></script>
+<script defer src="/js/firebase_auth.js?v=u19auth"></script>
 <script defer src="/js/payment.js?v=u15polish"></script>
 <script defer src="/js/recorder.js?v=u17deixis"></script>
 <script defer src="/js/groups.js?v=s1invite"></script>
 <script defer src="/js/study_rooms.js?v=s1invite"></script>
 <script defer src="/js/bug_report.js?v=u18vars"></script>
 <script defer src="/js/onboarding_tour.js?v=u15polish"></script>
-<script defer src="/js/main.js?v=s1invite"></script>
+<script defer src="/js/main.js?v=u19auth"></script>
 <script defer src="/js/main_inline.js?v=u18snippet"></script>
 <div id="bulkDeleteBar">
   <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;color:var(--text-muted);">
@@ -5059,18 +5235,18 @@
 </div>
 <button id="debugToggle" onclick="const p=document.getElementById('debugPanel'); const v=p.style.display!=='flex'; p.style.display=v?'flex':'none'; if(v){const c=document.getElementById('debugLogContent'); c.textContent=_debugLog.join('\n'); c.scrollTop=c.scrollHeight;}" style="position:fixed; bottom:20px; right:20px; width:40px; height:40px; border-radius:50%; background:var(--surface2); border:1px solid var(--border-bright); color:var(--text-muted); font-size:1.1rem; cursor:pointer; z-index:9999; display:flex; align-items:center; justify-content:center;">🔧</button>
 
-<footer style="text-align:center; padding:1.5rem 1rem; font-size:0.78rem; color:var(--text-muted); border-top:1px solid var(--border); margin-top:2rem;">
+<footer class="ny-footer">
   <!-- R6: footer business-info disclosure for e-commerce act compliance.
        사업장 주소는 베타 기간 비공개 (terms.html/privacy.html에 사유 명시),
        통신판매업 신고번호는 정부24 신청 후 발급되면 업데이트. -->
-  <div style="margin-bottom:0.6rem;">
-    <a href="/terms.html" style="color:var(--text-muted); text-decoration:none;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-muted)'">이용약관</a>
-    <span style="margin:0 0.5rem;">·</span>
-    <a href="/privacy.html" style="color:var(--text-muted); text-decoration:none;" onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='var(--text-muted)'">개인정보 처리방침</a>
+  <div class="ny-footer-links">
+    <a href="/terms.html">이용약관</a>
+    <span aria-hidden="true">·</span>
+    <a href="/privacy.html">개인정보 처리방침</a>
   </div>
-  <div style="font-size:0.7rem; line-height:1.6; opacity:0.85;">
+  <div class="ny-footer-legal">
     노틱스(Notyx) · 대표 김준현 · 사업자등록번호 892-24-02422<br>
-    통신판매업 신고번호 신청 중 · 문의 <a href="mailto:jhyun.kim35@gmail.com" style="color:var(--text-muted); text-decoration:underline;">jhyun.kim35@gmail.com</a>
+    통신판매업 신고번호 신청 중 · 문의 <a href="mailto:jhyun.kim35@gmail.com">jhyun.kim35@gmail.com</a>
   </div>
 </footer>
 

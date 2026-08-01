@@ -2,11 +2,36 @@
 // MUST load last — depends on all other /js/ files.
 
 let _authResolved = false;
-auth.onAuthStateChanged(user => {
+let _appViewBooted = false;
+
+// Single entry point for "auth state is now known". Everything that must not
+// run before auth resolves hangs off this. Kept as a named global (not an
+// inline arrow) so the boot sequence can be exercised directly in tests.
+function applyAuthState(user) {
   _authResolved = true;
   currentUser = user;
   updateAuthUI();
-});
+  if (user) {
+    // Pick the initial app view ONCE, after auth resolved. Doing this at page
+    // load (as we used to) selected 'new' for logged-out visitors, which
+    // rendered the whole app shell behind the landing screen.
+    if (!_appViewBooted) { _appViewBooted = true; bootAppView(); }
+  } else {
+    _appViewBooted = false;
+  }
+}
+
+// Initial view for an authenticated user: home if they have notes, new if not.
+async function bootAppView() {
+  try {
+    const notes = await getAllNotesFS();
+    switchView(notes.length > 0 ? 'home' : 'new');
+  } catch (_) {
+    switchView('new');
+  }
+}
+
+auth.onAuthStateChanged(applyAuthState);
 
 /* ═══════════════════════════════════════════════
    Init — load saved notes on page load
@@ -23,13 +48,6 @@ auth.onAuthStateChanged(user => {
       if (typeof window.mountLucideIcons === 'function') window.mountLucideIcons();
     }
   }
-  // Set initial view: home if notes exist, new if empty
-  try {
-    const notes = await getAllNotesFS();
-    switchView(notes.length > 0 ? 'home' : 'new');
-  } catch (_) {
-    switchView('new');
-  }
 })();
 
 // Initial state: keep all top-level views hidden until the first auth
@@ -38,6 +56,7 @@ auth.onAuthStateChanged(user => {
 // Firebase restored the session from IndexedDB — it looked like "not logged
 // in" until it suddenly resolved ("logged in out of nowhere"). Let
 // onAuthStateChanged decide instead, so there is no flash either way.
+document.documentElement.classList.add('ny-logged-out');
 document.getElementById('sidebar').style.display = 'none';
 document.getElementById('homeView').style.display = 'none';
 document.getElementById('landingView').style.display = 'none';
