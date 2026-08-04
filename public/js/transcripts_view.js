@@ -108,7 +108,7 @@
       </div>
       <div class="transcript-card-preview">${preview || '<span style="color:var(--text-muted)">(빈 녹취록)</span>'}</div>
       <div style="margin-top:0.6rem;">
-        <button class="transcript-use-note-btn" style="font-size:0.78rem;padding:0.28rem 0.7rem;border-radius:6px;border:1px solid var(--primary,#7c4dff);background:var(--primary-dim,rgba(124,77,255,0.12));color:var(--primary,#7c4dff);cursor:pointer;font-weight:600;" title="이 녹취록으로 새 노트 만들기">+ 새 노트 만들기</button>
+        <button class="transcript-use-note-btn" style="font-size:0.78rem;padding:0.28rem 0.7rem;border-radius:6px;border:1px solid var(--primary);background:var(--primary-dim);color:var(--primary);cursor:pointer;font-weight:600;" title="이 녹취록으로 새 노트 만들기">+ 새 노트 만들기</button>
       </div>
     `;
 
@@ -353,11 +353,11 @@
         </header>
         <div id="transcriptPreviewBody" class="transcript-preview-body"></div>
         <footer class="transcript-preview-footer">
-          <button id="transcriptPreviewUseNoteBtn"  class="action-btn" style="border-color:var(--primary,#7c4dff);color:var(--primary,#7c4dff);"><i data-lucide="file-plus" class="icon-sm"></i><span>새 노트 만들기</span></button>
-          <button id="transcriptPreviewRenameBtn"   class="action-btn"><i data-lucide="pencil" class="icon-sm"></i><span>이름 변경</span></button>
-          <button id="transcriptPreviewCopyBtn"     class="action-btn"><i data-lucide="copy" class="icon-sm"></i><span>텍스트 복사</span></button>
-          <button id="transcriptPreviewDownloadBtn" class="action-btn"><i data-lucide="download" class="icon-sm"></i><span>.txt 다운로드</span></button>
-          <button id="transcriptPreviewDeleteBtn"   class="action-btn danger"><i data-lucide="trash-2" class="icon-sm"></i><span>삭제</span></button>
+          <button id="transcriptPreviewUseNoteBtn"  class="ny-btn ny-btn-primary"><i data-lucide="file-plus" class="icon-sm"></i><span>새 노트 만들기</span></button>
+          <button id="transcriptPreviewRenameBtn"   class="ny-btn ny-btn-secondary"><i data-lucide="pencil" class="icon-sm"></i><span>이름 변경</span></button>
+          <button id="transcriptPreviewCopyBtn"     class="ny-btn ny-btn-secondary"><i data-lucide="copy" class="icon-sm"></i><span>텍스트 복사</span></button>
+          <button id="transcriptPreviewDownloadBtn" class="ny-btn ny-btn-secondary"><i data-lucide="download" class="icon-sm"></i><span>.txt 다운로드</span></button>
+          <button id="transcriptPreviewDeleteBtn"   class="ny-btn ny-btn-danger"><i data-lucide="trash-2" class="icon-sm"></i><span>삭제</span></button>
         </footer>
       </div>
     `;
@@ -507,7 +507,7 @@
           const display = custom
             ? label.replace(new RegExp(`${kind}\\s*${num}\\s*:`), () => `${escHtml(custom)}:`)
             : label;
-          return `${br}<span style="color:var(--primary,#7c4dff);font-weight:600">${display}</span>`;
+          return `${br}<span style="color:var(--primary);font-weight:600">${display}</span>`;
         }
       );
     } else {

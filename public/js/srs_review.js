@@ -177,7 +177,7 @@
 .srs-grade-btn:hover:not(:disabled) { opacity: 0.82; transform: translateY(-1px); }
 .srs-grade-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
 .srs-grade-red    { background: rgba(239,68,68,0.13);  color: #ef4444; border-color: rgba(239,68,68,0.28); }
-.srs-grade-orange { background: rgba(249,115,22,0.13); color: #f97316; border-color: rgba(249,115,22,0.28); }
+.srs-grade-orange { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); border-color: color-mix(in srgb, var(--warning) 28%, transparent); }
 .srs-grade-green  { background: rgba(34,197,94,0.13);  color: #22c55e; border-color: rgba(34,197,94,0.28); }
 .srs-grade-blue   { background: rgba(59,130,246,0.13); color: #3b82f6; border-color: rgba(59,130,246,0.28); }
 .srs-grade-feedback {
@@ -210,7 +210,7 @@
 .srs-stat-label { font-size: 0.8rem; color: var(--text-muted); }
 .srs-done-btn {
   background: var(--primary);
-  color: #fff;
+  color: var(--bg);
   border: none;
   border-radius: 12px;
   padding: 0.9rem 3.5rem;
@@ -241,14 +241,14 @@
   line-height: 1.6;
 }
 .srs-add-btn:hover:not(:disabled) {
-  background: rgba(124,77,255,0.12);
+  background: var(--primary-dim);
   color: var(--primary);
   border-color: var(--primary);
 }
 .srs-add-btn.active {
-  background: rgba(124,77,255,0.1);
+  background: var(--primary-dim);
   color: var(--primary);
-  border-color: rgba(124,77,255,0.3);
+  border-color: var(--primary);
   cursor: default;
 }
 `;

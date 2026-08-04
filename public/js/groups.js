@@ -75,8 +75,8 @@
         background: var(--surface, #fff); color: var(--text, #0f172a);
       }
       .groups-field input:focus {
-        outline: none; border-color: var(--primary, #7c3aed);
-        box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+        outline: none; border-color: var(--primary);
+        box-shadow: 0 0 0 3px var(--primary-dim);
       }
       .groups-field .hint {
         font-size: 11px; color: var(--text-muted, #94a3b8); margin-top: 4px;
@@ -89,9 +89,9 @@
         font-weight: 600; cursor: pointer; border: none; transition: all 0.15s;
       }
       .groups-btn-primary {
-        background: var(--primary, #7c3aed); color: #fff;
+        background: var(--primary); color: var(--bg);
       }
-      .groups-btn-primary:hover:not(:disabled) { background: #6d28d9; }
+      .groups-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
       .groups-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
       .groups-btn-secondary {
         background: transparent; color: var(--text, #0f172a);
@@ -103,7 +103,7 @@
         border-radius: 10px; padding: 14px; margin: 16px 0;
       }
       .groups-invite-url {
-        font-family: monospace; font-size: 13px; color: var(--primary, #7c3aed);
+        font-family: monospace; font-size: 13px; color: var(--primary);
         word-break: break-all; background: #fff; padding: 8px 10px;
         border-radius: 6px; border: 1px solid var(--border, #e2e8f0);
       }
@@ -117,7 +117,7 @@
         color: var(--text, #0f172a); display: flex; align-items: center;
         justify-content: center; gap: 6px; transition: all 0.15s;
       }
-      .groups-share-btn:hover { border-color: var(--primary, #7c3aed); }
+      .groups-share-btn:hover { border-color: var(--primary); }
       .groups-share-btn.kakao { background: #fee500; border-color: #fee500; }
       .groups-share-btn.kakao:hover { background: #fdd835; }
     `;
@@ -419,7 +419,7 @@
   function showJoinSuccess(box, data) {
     box.style.display = 'block';
     box.replaceChildren();
-    box.appendChild($('div', { style: 'font-weight:600;font-size:14px;color:var(--primary,#7c3aed);margin-bottom:6px' },
+    box.appendChild($('div', { style: 'font-weight:600;font-size:14px;color:var(--primary);margin-bottom:6px' },
       '✅ "' + (data.lectureName || '강의') + '" 그룹 합류 완료'));
     box.appendChild($('div', { style: 'font-size:12px;color:var(--text-muted,#64748b)' },
       '현재 멤버 ' + (data.memberCount || 1) + '명' + (data.already ? ' (이미 멤버였어요)' : '')));
@@ -837,8 +837,8 @@
       }
       .groups-status-badge {
         font-size: 11px; font-weight: 600; padding: 3px 9px;
-        border-radius: 999px; background: rgba(124,58,237,0.12);
-        color: var(--primary, #7c3aed);
+        border-radius: 999px; background: var(--primary-dim);
+        color: var(--primary);
       }
       .groups-status-badge--archived {
         background: rgba(148,163,184,0.18); color: #64748b;
@@ -860,11 +860,11 @@
       .groups-meta-value { font-size: 14px; font-weight: 700; color: var(--text, #0f172a); }
       .groups-meta-invite {
         grid-column: 1 / -1; padding: 9px 14px; border-radius: 8px;
-        border: 1px dashed var(--primary, #7c3aed); background: rgba(124,58,237,0.06);
-        color: var(--primary, #7c3aed); font-size: 13px; font-weight: 600;
+        border: 1px dashed var(--primary); background: var(--primary-dim);
+        color: var(--primary); font-size: 13px; font-weight: 600;
         cursor: pointer; transition: background 0.15s;
       }
-      .groups-meta-invite:hover { background: rgba(124,58,237,0.12); }
+      .groups-meta-invite:hover { background: var(--primary-dim); }
 
       .groups-page-section-title {
         margin: 18px 24px 8px; font-size: 13px; font-weight: 700;
@@ -883,8 +883,8 @@
         border-radius: 12px;
       }
       .groups-member-row.is-self {
-        border-color: var(--primary, #7c3aed);
-        background: rgba(124,58,237,0.04);
+        border-color: var(--primary);
+        background: var(--primary-dim);
         grid-template-columns: 40px 1fr auto;
         grid-template-rows: auto auto;
       }
@@ -907,7 +907,7 @@
         font-weight: 600;
       }
       .groups-role-tag {
-        background: rgba(124,58,237,0.15); color: var(--primary, #7c3aed);
+        background: var(--primary-dim); color: var(--primary);
       }
       .groups-member-sub {
         font-size: 12px; color: var(--text-muted, #94a3b8); margin-top: 2px;
@@ -920,7 +920,7 @@
         background: rgba(34,197,94,0.15); color: #16a34a;
       }
       .groups-pay-badge--unpaid {
-        background: rgba(249,115,22,0.15); color: #ea580c;
+        background: var(--accent-dim); color: var(--accent);
       }
 
       .groups-settlement-editor {
@@ -941,7 +941,7 @@
         background: var(--surface, #fff); color: var(--text, #0f172a);
       }
       .groups-editor-field input:focus, .groups-editor-field select:focus {
-        outline: none; border-color: var(--primary, #7c3aed);
+        outline: none; border-color: var(--primary);
       }
       .groups-settlement-save { padding: 9px 14px; font-size: 13px; }
 

@@ -169,7 +169,7 @@ function showFolderEditModal(id, currentName = '', currentColor = null) {
       </div>
       <div class="db-modal-footer">
         <button onclick="this.closest('.db-modal-overlay').remove()">취소</button>
-        <button class="folderEditConfirmBtn" style="background:var(--primary); color:#fff; border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">저장</button>
+        <button class="folderEditConfirmBtn" style="background:var(--primary); color:var(--bg); border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">저장</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -234,7 +234,7 @@ function enterFolderEditMode(row, folder) {
       <div class="folder-color-picker" style="display:flex; gap:0.3rem; flex-wrap:wrap;">${colorDots}</div>
       <div style="display:flex; gap:0.4rem; justify-content:flex-end;">
         <button class="folderRowCancel" style="background:var(--surface3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:0.3rem 0.8rem; cursor:pointer; font-size:0.8rem;">취소</button>
-        <button class="folderRowSave" style="background:var(--primary); color:#fff; border:none; border-radius:6px; padding:0.3rem 0.8rem; cursor:pointer; font-size:0.8rem;">저장</button>
+        <button class="folderRowSave" style="background:var(--primary); color:var(--bg); border:none; border-radius:6px; padding:0.3rem 0.8rem; cursor:pointer; font-size:0.8rem;">저장</button>
       </div>
     </div>`;
   row.querySelectorAll('.folder-color-option').forEach(dot => {

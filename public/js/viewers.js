@@ -783,7 +783,7 @@ function openPdfPopup(bodyEl) {
     em { font-style:italic; }
     hr { border:none; border-top:1px solid #ccc; margin:1.4em 0; }
     code { font-family:'Courier New',monospace; font-size:10pt; background:#f3f4f6; padding:0.1em 0.4em; border-radius:3px; }
-    blockquote { border-left:3px solid #7c4dff; margin:0.5em 0; padding:0.4em 0.8em; background:#f5f3ff; border-radius:0 4px 4px 0; }
+    blockquote { border-left:3px solid #333; margin:0.5em 0; padding:0.4em 0.8em; background:#f5f5f5; border-radius:0 4px 4px 0; }
     blockquote p { margin:0.15em 0; color:#555; }
     table { width:auto; border-collapse:collapse; margin:0.8em 0; font-size:10pt; }
     th, td { border:1px solid #999; padding:0.3em 0.6em; text-align:left; }
@@ -794,8 +794,8 @@ function openPdfPopup(bodyEl) {
     .inserted-slide-caption { font-size:9pt; color:#666; text-align:center; margin-top:0.3em; }
     #printBar { position:fixed; top:0; left:0; right:0; background:#f0f0f0; border-bottom:2px solid #ccc; padding:8px 16px; display:flex; align-items:center; gap:12px; z-index:9999; }
     #printBar button { padding:6px 16px; font-size:10pt; font-weight:600; border:none; border-radius:4px; cursor:pointer; }
-    #printBtn { background:#2563eb; color:#fff; }
-    #printBtn:hover { background:#1d4ed8; }
+    #printBtn { background:#333; color:#fff; }
+    #printBtn:hover { background:#1a1a1a; }
     #closeBtn { background:#e5e7eb; color:#333; }
     #closeBtn:hover { background:#d1d5db; }
     body { padding-top:calc(1.5cm + 44px); }

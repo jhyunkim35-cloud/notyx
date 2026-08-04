@@ -57,40 +57,55 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="/css/system.css?v=8">
+  <link rel="stylesheet" href="/css/system.css?v=uibphaseb">
 
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
   <style>
+    /* ── Phase B token bridge (2026-08-04) ─────────────────
+       These names are the legacy ones and 557 selectors depend on them, so
+       ONLY the values move here — renaming a custom property silently breaks
+       every consumer outside this file (CSS ignores an undefined var, so you
+       get a transparent background and no error). That is exactly how Phase A
+       broke `body`. Values now mirror public/css/system.css, so the app screen
+       matches the landing instead of flipping to indigo at login.
+
+       Every colour below satisfies max(R,G,B) - min(R,G,B) <= 3 out of 255 —
+       a warm paper cast, not a hue. The only chromatic tokens left are the
+       amber highlighter and the three status colours, which always ship with
+       an icon and a word, never colour alone.
+
+       --primary is now the MAXIMUM-EMPHASIS value, not a hue: near-white on
+       dark, near-black on light. Rules that fill with it therefore pair it
+       with `color: var(--bg)`, not `#fff` (see B2). Same inversion the
+       landing CTA already uses. */
     :root {
-      --bg: #07070f;
-      --surface: #0f0f1c;
-      --surface2: #16162a;
-      --surface2-rgb: 22, 22, 42; /* rgba() consumers (e.g. pptx_parser drag scrim) */
-      --surface3: #1e1e36;
-      --border: #252545;
-      --border-bright: #3a3a6a;
-      /* Notyx primary: deep indigo (Nautilus-depth + knowledge) */
-      --primary: #7c3aed;
-      --primary-dim: rgba(124, 58, 237, 0.15);
-      --primary-bright: #a78bfa;
-      --primary-deep: #5b21b6;
-      /* Secondary: kept as a complementary cool tone for accents in
-         gradients (logo mark, illustrations). Slightly cooler indigo
-         instead of the cyan we had before — keeps the palette unified. */
-      --secondary: #8b5cf6;
-      --secondary-dim: rgba(139, 92, 246, 0.12);
-      /* Accent: coral/orange — for warm highlight moments. Used sparingly
-         so it stands out against the indigo baseline. */
-      --accent: #f97316;
-      --accent-dim: rgba(249, 115, 22, 0.15);
-      --accent-soft: #fb923c;
+      --bg: #0f0e0d;
+      --surface: #161514;
+      --surface2: #1b1a19;
+      --surface2-rgb: 27, 26, 25; /* rgba() consumers (e.g. pptx_parser drag scrim) */
+      --surface3: #242322;
+      --border: #2b2a28;
+      --border-bright: #3e3d3b;
+      --primary: #ebeae9;
+      --primary-dim: rgba(235, 234, 233, 0.10);
+      --primary-bright: #ffffff;
+      --primary-deep: #a2a19f;
+      --secondary: #a2a19f;
+      --secondary-dim: rgba(162, 161, 159, 0.12);
+      /* --accent (orange) is retired. The name survives for the 3 remaining
+         consumers; the value is just the emphasis neutral now. */
+      --accent: #ebeae9;
+      --accent-dim: rgba(235, 234, 233, 0.10);
+      --accent-soft: #a2a19f;
       --success: #4ade80;
       --success-dim: rgba(74, 222, 128, 0.12);
       --warning: #fbbf24;
-      --text: #e2e2f2;
-      --text-muted: #8888aa;
-      --text-dim: #44445a;
+      --text: #ebeae9;
+      --text-muted: #a2a19f;
+      /* --text-dim is read as text in places, so it clears 4.5:1 on --bg
+         rather than sitting at the old 3.x:1 decorative value. */
+      --text-dim: #8b8a88;
       --radius: 14px;
       --radius-sm: 8px;
 
@@ -121,10 +136,12 @@
 
       /* Q4: note-content inline emphasis colors — swapped in :root.light below.
          Kept as vars (not literals) so light theme gets accessible contrast
-         instead of the dark-palette hex values bleeding into a white bg. */
-      --md-heading: #a5b4fc;
-      --md-strong: #d4c0ff;
-      --md-em: #a0d8ef;
+         instead of the dark-palette hex values bleeding into a white bg.
+         Phase B: emphasis is now weight + value, not hue. Highlight stays
+         amber — it is the one signature chromatic in the system. */
+      --md-heading: #ebeae9;
+      --md-strong: #ffffff;
+      --md-em: #a2a19f;
       --md-highlight: #fbbf24;
     }
 
@@ -162,17 +179,6 @@
       margin-bottom: 1.2rem;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-    }
-
-    header h1 {
-      font-size: clamp(1.8rem, 4vw, 2.8rem);
-      font-weight: 800;
-      background: linear-gradient(135deg, #a78bfa, #7c3aed, #00b4d8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      line-height: 1.2;
-      margin-bottom: 0.6rem;
     }
 
     header p {
@@ -225,7 +231,7 @@
 
     .api-input:focus {
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+      box-shadow: 0 0 0 3px var(--primary-dim);
     }
 
     .api-input::placeholder { color: var(--text-dim); }
@@ -259,11 +265,11 @@
     }
 
     .upload-zone.ppt-zone::before {
-      background: radial-gradient(ellipse at 50% 0%, rgba(124, 58, 237, 0.08), transparent 70%);
+      background: var(--surface2);
     }
 
     .upload-zone.txt-zone::before {
-      background: radial-gradient(ellipse at 50% 0%, rgba(0, 180, 216, 0.08), transparent 70%);
+      background: var(--surface2);
     }
 
     .upload-zone:hover { border-style: solid; }
@@ -283,7 +289,7 @@
     }
 
     .upload-zone.has-file::before {
-      background: radial-gradient(ellipse at 50% 0%, rgba(74, 222, 128, 0.06), transparent 70%);
+      background: var(--surface2);
       opacity: 1;
     }
 
@@ -344,12 +350,12 @@
     .analyze-btn {
       width: 100%;
       padding: 0.95rem;
-      background: linear-gradient(135deg, #7c3aed, #5b8ef7, #00b4d8);
+      background: var(--primary);
       background-size: 200% 200%;
       animation: gradShift 4s ease infinite;
       border: none;
       border-radius: var(--radius);
-      color: #fff;
+      color: var(--bg);
       font-size: 1rem;
       font-weight: 700;
       letter-spacing: 0.02em;
@@ -358,15 +364,10 @@
       margin-bottom: 2.5rem;
     }
 
-    @keyframes gradShift {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-    }
-
     .analyze-btn:hover:not(:disabled) {
       opacity: 0.92;
       transform: translateY(-2px);
-      box-shadow: 0 10px 40px rgba(124, 58, 237, 0.35);
+      box-shadow: 0 10px 40px var(--primary-dim);
     }
 
     .analyze-btn:disabled {
@@ -416,16 +417,16 @@
 
     .status-dot.loading {
       background: var(--primary);
-      box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.6);
+      box-shadow: 0 0 0 0 var(--primary-dim);
       animation: dotPulse 1.2s ease-out infinite;
     }
 
     .status-dot.done { background: var(--success); }
 
     @keyframes dotPulse {
-      0%   { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.6); }
-      70%  { box-shadow: 0 0 0 8px rgba(124, 58, 237, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+      0%   { box-shadow: 0 0 0 0 var(--primary-dim); }
+      70%  { box-shadow: 0 0 0 8px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
     }
 
     .copy-btn {
@@ -466,44 +467,6 @@
 
     .final-action-bar.visible { display: flex; }
 
-    .action-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      padding: 0.35rem 0.75rem;
-      background: var(--surface3);
-      border: 1px solid var(--border-bright);
-      border-radius: var(--radius-sm);
-      color: var(--text-muted);
-      font-size: 0.78rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-      white-space: nowrap;
-    }
-
-    .action-btn:hover {
-      border-color: var(--primary);
-      color: var(--primary);
-      background: var(--primary-dim);
-    }
-
-    .action-btn.copied {
-      border-color: var(--success);
-      color: var(--success);
-      background: var(--success-dim);
-    }
-
-    .action-btn:disabled {
-      opacity: 0.38;
-      cursor: not-allowed;
-      pointer-events: none;
-    }
-    .action-btn:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
-    }
-
     #splitSlides img { width:100%; border:1px solid var(--border); border-radius:8px; margin-bottom:0.5rem; display:block; }
     #splitSlides .slide-label { text-align:center; font-size:0.78rem; color:var(--text-muted); margin-bottom:1rem; }
     /* Round 1: slide list items + clickable p.N references + flash highlight */
@@ -522,22 +485,22 @@
     }
     .split-no-slides div { font-weight:600; }
     .split-no-slides span { font-size:0.85rem; color:var(--text-dim); }
-    a.slide-ref { color:var(--primary, #7c4dff); text-decoration:underline; text-underline-offset:2px; cursor:pointer; font-weight:500; padding:0 2px; border-radius:3px; }
+    a.slide-ref { color:var(--primary); text-decoration:underline; text-underline-offset:2px; cursor:pointer; font-weight:500; padding:0 2px; border-radius:3px; }
     a.slide-ref:hover { background:var(--surface2); }
     @keyframes slide-flash {
-      0%   { background:rgba(124,77,255,0);    box-shadow:0 0 0 0   rgba(124,77,255,0); }
-      25%  { background:rgba(124,77,255,0.28); box-shadow:0 0 0 4px rgba(124,77,255,0.45); }
-      100% { background:rgba(124,77,255,0);    box-shadow:0 0 0 0   rgba(124,77,255,0); }
+      0%   { background:transparent;      box-shadow:0 0 0 0   transparent; }
+      25%  { background:var(--surface3);  box-shadow:0 0 0 4px var(--primary-dim); }
+      100% { background:transparent;      box-shadow:0 0 0 0   transparent; }
     }
     .split-slide-item.flash-highlight { animation:slide-flash 1.2s ease-out; }
     /* Round 2: emphasize the slide currently most-visible in the list */
-    #splitSlides .split-slide-item.active img { border-color:var(--primary, #7c4dff); box-shadow:0 0 0 2px var(--primary, #7c4dff); }
-    #splitSlides .split-slide-item.active .slide-label { color:var(--primary, #7c4dff); font-weight:600; }
+    #splitSlides .split-slide-item.active img { border-color:var(--primary); box-shadow:0 0 0 2px var(--primary); }
+    #splitSlides .split-slide-item.active .slide-label { color:var(--primary); font-weight:600; }
     /* Round 3: clickable slides + flash for the destination anchor */
     #splitSlides .split-slide-item { cursor:pointer; }
     @keyframes slide-ref-flash {
       0%, 100% { background:transparent; box-shadow:none; }
-      30%, 60% { background:rgba(124,77,255,0.28); box-shadow:0 0 0 2px rgba(124,77,255,0.45); }
+      30%, 60% { background:var(--surface3); box-shadow:0 0 0 2px var(--primary-dim); }
     }
     a.slide-ref.ref-flash { animation:slide-ref-flash 1.2s ease-out; border-radius:3px; }
     /* Round 4: slides tab is mobile-only; hide its button on desktop where
@@ -557,8 +520,8 @@
     }
     .acc-mode-btn:hover { color:var(--text); }
     .acc-mode-btn.active {
-      background:var(--primary, #7c4dff); color:#fff;
-      border-color:var(--primary, #7c4dff);
+      background:var(--primary); color:var(--bg);
+      border-color:var(--primary);
     }
     /* Round 6: Ask tab — chat UI for questions about selected text */
     #splitAsk { padding:0; overflow:hidden; }
@@ -566,7 +529,7 @@
     .ask-context-card {
       margin:0.75rem 1rem 0.25rem; padding:0.6rem 0.75rem;
       background:var(--surface2); border:1px solid var(--border);
-      border-left:3px solid var(--primary, #7c4dff);
+      border-left:3px solid var(--primary);
       border-radius:6px; font-size:0.82rem; color:var(--text-muted);
       display:flex; gap:0.6rem; align-items:flex-start; flex-shrink:0;
     }
@@ -576,7 +539,7 @@
     .ask-context-clear:hover { color:var(--text); }
     .ask-history { flex:1; min-height:0; overflow-y:auto; padding:0.75rem 1rem; display:flex; flex-direction:column; gap:0.6rem; }
     .ask-msg { padding:0.65rem 0.85rem; border-radius:10px; max-width:90%; line-height:1.55; font-size:0.88rem; word-break:break-word; }
-    .ask-msg.user { background:var(--primary, #7c4dff); color:#fff; align-self:flex-end; border-bottom-right-radius:2px; white-space:pre-wrap; }
+    .ask-msg.user { background:var(--primary); color:var(--bg); align-self:flex-end; border-bottom-right-radius:2px; white-space:pre-wrap; }
     .ask-msg.bot { background:var(--surface2); color:var(--text); align-self:flex-start; border-bottom-left-radius:2px; }
     .ask-msg.bot .md-content { max-width:none; font-size:0.88rem; }
     .ask-msg.bot .md-content > *:first-child { margin-top:0; }
@@ -596,9 +559,9 @@
       border-radius:8px; font-size:0.88rem; font-family:inherit; line-height:1.5;
       background:var(--bg); color:var(--text);
     }
-    .ask-input:focus { outline:none; border-color:var(--primary, #7c4dff); }
+    .ask-input:focus { outline:none; border-color:var(--primary); }
     .ask-send-btn {
-      background:var(--primary, #7c4dff); color:#fff; border:none;
+      background:var(--primary); color:var(--bg); border:none;
       padding:0.55rem 0.85rem; border-radius:8px; cursor:pointer;
       font-weight:600; font-size:0.85rem; flex-shrink:0;
       display:flex; align-items:center; gap:0.3rem;
@@ -613,10 +576,10 @@
     /* Floating "❓ 질문하기" button shown after text selection */
     #askFloatBtn {
       position:fixed; z-index:11000;
-      background:var(--primary, #7c4dff); color:#fff; border:none;
+      background:var(--primary); color:var(--bg); border:none;
       padding:0.45rem 0.8rem; border-radius:8px; cursor:pointer;
       font-size:0.82rem; font-weight:600;
-      box-shadow:0 4px 14px rgba(124,77,255,0.45);
+      box-shadow:0 4px 14px var(--primary-dim);
       display:none; align-items:center; gap:0.3rem;
       animation:askFloatFadeIn 0.15s ease-out;
     }
@@ -644,7 +607,7 @@
     #splitAccordion .acc-body .acc-extra { font-size:0.82rem; color:var(--text-muted); line-height:1.7; padding:0.2rem 0 0.2rem 0.8rem; }
     #splitAccordion .acc-sub { border-left:3px solid var(--primary); margin:0.3rem 0; border-radius:4px; }
     #splitAccordion .acc-sub-header { padding:0.4rem 0.8rem; cursor:pointer; font-size:0.88rem; font-weight:600; color:var(--secondary); user-select:none; }
-    #splitAccordion .acc-sub-header:hover { background:rgba(124,58,237,0.06); }
+    #splitAccordion .acc-sub-header:hover { background:var(--primary-dim); }
     #splitAccordion .acc-sub-body { display:none; padding:0.3rem 0.8rem 0.5rem 1.2rem; font-size:0.84rem; line-height:1.7; color:var(--text); }
     #splitAccordion .acc-sub.open .acc-sub-body { display:block; }
     #splitAccordion .acc-sub.open .acc-sub-header { color:var(--primary); }
@@ -652,8 +615,8 @@
 
     /* ── Mind map tab ──────────────────────────── */
 
-    .transcript-content mark { background:rgba(124,58,237,0.25); color:var(--text); border-radius:2px; padding:0 2px; cursor:pointer; }
-    .transcript-content mark:hover { background:rgba(124,58,237,0.4); }
+    .transcript-content mark { background:var(--ny-hl); color:var(--text); border-radius:2px; padding:0 2px; cursor:pointer; }
+    .transcript-content mark:hover { background:var(--ny-hl); }
     .transcript-content mark.user-removed { background:transparent; text-decoration:none; }
 
     /* ── Filter disclosure (collapsible diff) ───── */
@@ -792,14 +755,14 @@
       font-weight: 600;
       line-height: 1;
       color: var(--primary);
-      background: rgba(124, 58, 237, 0.12);
+      background: var(--primary-dim);
       border: 1px solid transparent;
       border-radius: 999px;
       padding: 0.15em 0.55em;
       margin: 0 0.15em;
       cursor: pointer;
     }
-    .page-cite-chip:hover { background: rgba(124, 58, 237, 0.22); }
+    .page-cite-chip:hover { background: var(--surface3); }
 
     /* U17: deixis-resolution inferred-reference chips (mirrors .page-cite-chip's
        color/theme handling — --primary is a single value, not split by theme). */
@@ -807,7 +770,7 @@
     .deixis-chip {
       display: inline-block; margin: 0 2px; padding: 0 6px; border-radius: 8px;
       font-size: 0.78em; font-style: italic; opacity: 0.85;
-      background: rgba(124, 58, 237, 0.12);
+      background: var(--primary-dim);
       color: var(--primary); vertical-align: baseline;
     }
 
@@ -815,7 +778,7 @@
     .md-table th, .md-table td { border: 1px solid var(--border-bright); padding: 0.4rem 0.7rem; text-align: left; min-width: 60px; }
     .md-table th { background: var(--surface3); color: var(--secondary); font-weight: 600; }
     .md-table td { background: var(--surface2); }
-    .md-table tr:hover td { background: rgba(124, 58, 237, 0.06); }
+    .md-table tr:hover td { background: var(--primary-dim); }
 
     .md-content table, #splitAccordion .md-content table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
     .md-content th, .md-content td, #splitAccordion .md-content th, #splitAccordion .md-content td { min-width: 60px; white-space: nowrap; }
@@ -939,8 +902,8 @@
     }
 
     .preprocess-step.info {
-      background: rgba(0, 180, 216, 0.07);
-      border: 1px solid rgba(0, 180, 216, 0.2);
+      background: var(--secondary-dim);
+      border: 1px solid var(--secondary-dim);
     }
 
     .step-icon { font-size: 1rem; margin-top: 0.08rem; flex-shrink: 0; }
@@ -1065,6 +1028,7 @@
       gap: 6px;
       user-select: none;
       touch-action: none;
+      color: var(--primary);
     }
     #batchBuddy.dragging { cursor: grabbing; }
     #batchBuddySpeech {
@@ -1080,7 +1044,7 @@
       transition: box-shadow 0.15s;
     }
     #batchBuddy:hover #batchBuddySpeech {
-      box-shadow: 0 2px 16px rgba(124,58,237,0.35);
+      box-shadow: 0 2px 16px var(--primary-dim);
       border-color: var(--primary);
     }
     #batchBuddySpeech::after {
@@ -1149,7 +1113,7 @@
     .progress-fill {
       height: 100%;
       border-radius: 99px;
-      background: linear-gradient(90deg, #7c3aed, #5b8ef7, #00b4d8);
+      background: var(--primary);
       background-size: 200% 100%;
       width: 0%;
       transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1164,7 +1128,7 @@
     .progress-pct {
       font-size: 0.8rem;
       font-weight: 700;
-      color: var(--primary-light, #a5b4fc);
+      color: var(--primary);
       min-width: 34px;
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -1203,7 +1167,6 @@
     @media (max-width: 600px) {
       .upload-grid { grid-template-columns: 1fr; }
       .api-card { flex-wrap: wrap; }
-      header h1 { font-size: 1.7rem; }
       .notes-actions { flex-wrap: wrap; }
     }
 
@@ -1227,7 +1190,7 @@
     .agent-section-title {
       font-size: 1.1rem;
       font-weight: 700;
-      background: linear-gradient(135deg, #a78bfa, #00b4d8);
+      background: var(--primary);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -1279,7 +1242,7 @@
 
     .agent-node.loading {
       border-color: var(--primary);
-      box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.6);
+      box-shadow: 0 0 0 0 var(--primary-dim);
       animation: dotPulse 1.2s ease-out infinite;
     }
 
@@ -1451,7 +1414,7 @@
       height: 8px;
       border-radius: 50%;
       background: var(--primary);
-      box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.6);
+      box-shadow: 0 0 0 0 var(--primary-dim);
       animation: dotPulse 1.2s ease-out infinite;
       flex-shrink: 0;
       transition: background 0.3s;
@@ -1706,7 +1669,7 @@
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
     }
-    .study-tools-gen-btn:hover:not(:disabled), .study-tools-regen-btn:hover:not(:disabled) { background: var(--primary); color: #fff; }
+    .study-tools-gen-btn:hover:not(:disabled), .study-tools-regen-btn:hover:not(:disabled) { background: var(--primary); color: var(--bg); }
     .study-tools-gen-btn:disabled, .study-tools-regen-btn:disabled { opacity: 0.6; cursor: default; }
     .study-tools-regen-row { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
     .study-tools-regen-row .study-tools-regen-btn { padding: 0.25rem 0.75rem; font-size: 0.75rem; }
@@ -1746,7 +1709,7 @@
     .cloze[data-revealed="1"] { background: transparent; min-width: 0; }
     .cloze:focus-visible {
       outline: none;
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+      box-shadow: 0 0 0 3px var(--primary-dim);
     }
     .memorize-list, .concepts-list { display: flex; flex-direction: column; gap: 0.5rem; }
     .memorize-row, .concept-row {
@@ -1828,7 +1791,7 @@
     }
     .mode-btn:focus-visible {
       outline: none;
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+      box-shadow: 0 0 0 3px var(--primary-dim);
     }
 
     /* ── Batch Section ───────────────────────────── */
@@ -1846,9 +1809,9 @@
       margin-bottom: -0.5rem;
     }
     @keyframes batch-queue-flash {
-      0%   { background: rgba(124, 77, 255, 0);    box-shadow: 0 0 0 0   rgba(124, 77, 255, 0); }
-      25%  { background: rgba(124, 77, 255, 0.14); box-shadow: 0 0 0 4px rgba(124, 77, 255, 0.35); }
-      100% { background: rgba(124, 77, 255, 0);    box-shadow: 0 0 0 0   rgba(124, 77, 255, 0); }
+      0%   { background: transparent;         box-shadow: 0 0 0 0   transparent; }
+      25%  { background: var(--primary-dim);  box-shadow: 0 0 0 4px var(--primary-dim); }
+      100% { background: transparent;         box-shadow: 0 0 0 0   transparent; }
     }
     .batch-queue.flash-highlight { animation: batch-queue-flash 1.2s ease-out; border-radius: var(--radius); }
     .batch-section {
@@ -2023,7 +1986,7 @@
     }
 
     .batch-item-status.waiting  { background: var(--surface3); color: var(--text-dim); border: 1px solid var(--border); }
-    .batch-item-status.processing { background: var(--primary-dim); color: var(--primary); border: 1px solid rgba(124,58,237,0.3); }
+    .batch-item-status.processing { background: var(--primary-dim); color: var(--primary); border: 1px solid var(--primary-dim); }
     .batch-item-status.done  { background: var(--success-dim); color: var(--success); border: 1px solid rgba(74,222,128,0.3); }
     .batch-item-status.error { background: rgba(248,113,113,0.1); color: #fca5a5; border: 1px solid rgba(248,113,113,0.3); }
 
@@ -2077,7 +2040,7 @@
       gap: 0.75rem;
       padding: 0.75rem 1.1rem;
       background: var(--primary-dim);
-      border: 1px solid rgba(124,58,237,0.3);
+      border: 1px solid var(--primary-dim);
       border-radius: var(--radius-sm);
       font-size: 0.9rem;
       font-weight: 600;
@@ -2334,7 +2297,7 @@
     .db-modal-row-actions button.confirm-delete:hover { background:#d33b40; color:#fff; }
     .db-modal-footer { display:flex; gap:0.5rem; }
     .db-modal-footer input { flex:1; padding:0.4rem 0.6rem; border-radius:6px; border:1px solid var(--border); background:var(--surface2); color:var(--text); font-size:0.85rem; }
-    .db-modal-footer button { padding:0.5rem 1rem; min-width:60px; white-space:nowrap; border-radius:6px; border:none; background:var(--primary); color:#fff; font-size:0.85rem; cursor:pointer; flex-shrink:0; }
+    .db-modal-footer button { padding:0.5rem 1rem; min-width:60px; white-space:nowrap; border-radius:6px; border:none; background:var(--primary); color:var(--bg); font-size:0.85rem; cursor:pointer; flex-shrink:0; }
     .reorder-row { display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0.7rem; background:var(--surface2); border-radius:6px; border:1px solid var(--border); cursor:default; user-select:none; transition:background 0.15s; }
     .reorder-row.drag-over { background:var(--surface3); border-color:var(--primary); }
     .reorder-row.dragging { opacity:0.4; }
@@ -2357,14 +2320,14 @@
     .quiz-seg-group { display:flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
     .quiz-seg-btn { padding:0.3rem 0.75rem; background:var(--surface3); border:none; border-right:1px solid var(--border); color:var(--text-muted); font-size:0.82rem; cursor:pointer; transition:all 0.12s; white-space:nowrap; }
     .quiz-seg-btn:last-child { border-right:none; }
-    .quiz-seg-btn.active { background:#7c3aed; color:#fff; font-weight:600; }
+    .quiz-seg-btn.active { background:var(--primary); color:var(--bg); font-weight:600; }
     .quiz-seg-btn:hover:not(.active) { background:var(--surface); color:var(--text); }
     .quiz-inline-loading { display:flex; align-items:center; gap:0.7rem; padding:1.5rem 0; color:var(--text-muted); font-size:0.9rem; }
-    .qi-spinner { display:inline-block; width:16px; height:16px; border:2px solid var(--border-bright); border-top-color:#7c3aed; border-radius:50%; animation:spin 0.7s linear infinite; flex-shrink:0; }
+    .qi-spinner { display:inline-block; width:16px; height:16px; border:2px solid var(--border-bright); border-top-color:var(--primary); border-radius:50%; animation:spin 0.7s linear infinite; flex-shrink:0; }
     .quiz-dot-anim::after { content:''; animation:quiz-dots 1.4s steps(4,end) infinite; }
     @keyframes quiz-dots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
     .quiz-loading-container { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; padding:2.5rem 1rem; }
-    .quiz-loading-spinner { width:40px; height:40px; border:3px solid var(--border-bright); border-top-color:#7c3aed; border-radius:50%; animation:spin 0.8s linear infinite; }
+    .quiz-loading-spinner { width:40px; height:40px; border:3px solid var(--border-bright); border-top-color:var(--primary); border-radius:50%; animation:spin 0.8s linear infinite; }
     .quiz-loading-msg { font-size:0.92rem; color:var(--text-muted); transition:opacity 0.35s ease; }
     .quiz-loading-msg.fade-out { opacity:0; }
     .quiz-loading-timer { font-size:0.78rem; color:var(--text-muted); opacity:0.6; }
@@ -2378,24 +2341,24 @@
     .qi-flag-btn.qi-flagged { opacity:1; border-color:#f59e0b; background:rgba(245,158,11,0.12); }
     .quiz-card-q { font-size:0.95rem; font-weight:600; color:var(--text); line-height:1.65; }
     .qi-hint-btn { align-self:flex-start; padding:0.3rem 0.7rem; background:var(--surface3); border:1px solid var(--border); border-radius:6px; color:var(--text-muted); font-size:0.8rem; cursor:pointer; }
-    .qi-hint-btn:hover { border-color:#7c3aed; color:#7c3aed; }
+    .qi-hint-btn:hover { border-color:var(--primary); color:var(--primary); }
     .qi-hint-text { font-size:0.82rem; color:var(--text-muted); background:var(--surface); border-left:3px solid #f59e0b; border-radius:6px; padding:0.5rem 0.75rem; margin-top:0.35rem; line-height:1.55; }
     .quiz-card-choices { display:flex; flex-direction:column; gap:0.38rem; }
     .qi-choice { width:100%; text-align:left; padding:0.6rem 0.9rem; border:1px solid var(--border); border-radius:7px; background:var(--surface3); color:var(--text); font-size:0.88rem; cursor:pointer; transition:border-color 0.12s, background 0.12s; line-height:1.5; }
-    .qi-choice:hover:not(:disabled) { border-color:#7c3aed; background:rgba(124,58,237,0.08); }
+    .qi-choice:hover:not(:disabled) { border-color:var(--primary); background:var(--primary-dim); }
     .qi-choice:disabled { cursor:default; }
-    .qi-choice.qi-selected { border-color:#7c3aed; background:rgba(124,58,237,0.1); font-weight:600; }
+    .qi-choice.qi-selected { border-color:var(--primary); background:var(--primary-dim); font-weight:600; }
     .qi-choice.qi-correct { border-color:#22c55e !important; background:rgba(34,197,94,0.1) !important; color:#22c55e; font-weight:600; }
     .qi-choice.qi-wrong   { border-color:#ef4444 !important; background:rgba(239,68,68,0.08) !important; color:#ef4444; }
-    .qi-explanation { padding:0.65rem 0.9rem; background:var(--surface); border-radius:7px; border-left:3px solid #7c3aed; font-size:0.83rem; color:var(--text-muted); line-height:1.6; display:none; }
+    .qi-explanation { padding:0.65rem 0.9rem; background:var(--surface); border-radius:7px; border-left:3px solid var(--primary); font-size:0.83rem; color:var(--text-muted); line-height:1.6; display:none; }
     .quiz-card-open { display:flex; flex-direction:column; }
     .qi-text-input { padding:0.6rem 0.9rem; border:1px solid var(--border); border-radius:7px; background:var(--surface3); color:var(--text); font-size:0.88rem; outline:none; transition:border-color 0.12s; }
-    .qi-text-input:focus { border-color:#7c3aed; }
+    .qi-text-input:focus { border-color:var(--primary); }
     .qi-text-input:disabled { opacity:0.6; cursor:default; }
     .qi-essay-input { padding:0.6rem 0.9rem; border:1px solid var(--border); border-radius:7px; background:var(--surface3); color:var(--text); font-size:0.88rem; resize:vertical; outline:none; font-family:inherit; line-height:1.6; transition:border-color 0.12s; }
-    .qi-essay-input:focus { border-color:#7c3aed; }
+    .qi-essay-input:focus { border-color:var(--primary); }
     .qi-essay-input:disabled { opacity:0.6; cursor:default; }
-    .quiz-grade-btn { padding:0.6rem 1.5rem; border-radius:7px; border:none; background:#7c3aed; color:#fff; font-size:0.9rem; font-weight:600; cursor:pointer; transition:filter 0.15s; }
+    .quiz-grade-btn { padding:0.6rem 1.5rem; border-radius:7px; border:none; background:var(--primary); color:var(--bg); font-size:0.9rem; font-weight:600; cursor:pointer; transition:filter 0.15s; }
     .quiz-grade-btn:hover:not(:disabled) { filter:brightness(1.1); }
     .quiz-grade-btn:disabled { opacity:0.38; cursor:default; }
     .quiz-results-banner { background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:1.25rem; display:flex; flex-direction:column; gap:0.5rem; }
@@ -2416,16 +2379,16 @@
     .quiz-debug-label { font-family:monospace; font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:0.25rem; }
     .quiz-debug-pre { font-family:monospace; font-size:0.75rem; color:var(--text-muted); background:var(--surface2); border:1px solid var(--border); border-radius:5px; padding:0.55rem 0.7rem; white-space:pre-wrap; word-break:break-all; margin:0; }
     .quiz-debug-full-wrap { margin-top:0.25rem; }
-    .quiz-debug-full-toggle { font-family:monospace; font-size:0.75rem; color:#7c3aed; cursor:pointer; list-style:none; padding:0.2rem 0; }
+    .quiz-debug-full-toggle { font-family:monospace; font-size:0.75rem; color:var(--primary); cursor:pointer; list-style:none; padding:0.2rem 0; }
     .quiz-sc-container { display:flex; flex-direction:column; gap:0.75rem; }
     .quiz-sc-status { display:flex; justify-content:space-between; font-size:0.82rem; color:var(--text-muted); padding:0.25rem 0.5rem; }
     .quiz-sc-card-area { min-height:280px; }
     .quiz-sc-nav { display:flex; justify-content:flex-end; padding-top:0.5rem; }
-    .quiz-next-btn { font-weight:700; padding:0.6rem 1.4rem; border-radius:8px; background:var(--primary); color:#fff; border:none; cursor:pointer; font-size:0.95rem; transition:transform 0.15s, opacity 0.15s; }
+    .quiz-next-btn { font-weight:700; padding:0.6rem 1.4rem; border-radius:8px; background:var(--primary); color:var(--bg); border:none; cursor:pointer; font-size:0.95rem; transition:transform 0.15s, opacity 0.15s; }
     .quiz-next-btn:disabled { opacity:0.5; cursor:not-allowed; }
     .quiz-next-btn.pulse { animation:quiz-pulse 1s infinite ease-in-out; }
     @keyframes quiz-pulse { 0%{transform:scale(1)} 50%{transform:scale(1.04)} 100%{transform:scale(1)} }
-    .quiz-submit-btn { padding:0.45rem 1rem; background:var(--secondary-dim); color:var(--secondary); border:1px solid rgba(0,180,216,0.4); border-radius:6px; font-size:0.85rem; font-weight:600; cursor:pointer; margin-top:0.5rem; }
+    .quiz-submit-btn { padding:0.45rem 1rem; background:var(--secondary-dim); color:var(--secondary); border:1px solid var(--secondary-dim); border-radius:6px; font-size:0.85rem; font-weight:600; cursor:pointer; margin-top:0.5rem; }
     .quiz-sc-placeholder { text-align:center; padding:2rem 1rem; color:var(--text-muted); font-size:0.9rem; }
     .weakness-section-row { display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0; }
     .weakness-label { font-size:0.82rem; color:var(--text); min-width:120px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -2461,7 +2424,7 @@
     .weakness-preview-pct { font-weight:700; min-width:38px; text-align:right; font-size:0.85rem; }
     .weakness-preview-stats { font-weight:700; min-width:78px; text-align:right; font-size:0.82rem; white-space:nowrap; }
     .weakness-preview-review-btn { padding:0.3rem 0.7rem; border-radius:5px; border:1px solid var(--border); background:var(--surface); color:var(--primary); font-size:0.78rem; font-weight:600; cursor:pointer; transition:background 0.15s; }
-    .weakness-preview-review-btn:hover { background:var(--primary-dim, rgba(124,58,237,0.15)); }
+    .weakness-preview-review-btn:hover { background:var(--primary-dim); }
     #importNoteBody:empty::before { content:attr(data-placeholder); color:var(--text-muted); pointer-events:none; }
     .import-preview-item { display:flex; align-items:flex-start; gap:0.6rem; padding:0.6rem 0.8rem; background:var(--surface2); border:1px solid var(--border); border-radius:8px; }
     .import-preview-item input[type=checkbox] { margin-top:2px; flex-shrink:0; accent-color:var(--primary); width:15px; height:15px; cursor:pointer; }
@@ -2793,7 +2756,7 @@
     }
     .add-rec-btn-mic:hover {
       border-color: var(--primary);
-      color: #fff;
+      color: var(--bg);
       background: var(--primary);
     }
 
@@ -2940,7 +2903,7 @@
     .rec-meter-bar {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, var(--success), var(--warning), var(--danger));
+      background: var(--border-bright);
       transition: width 0.08s linear;
     }
     .rec-status {
@@ -2971,7 +2934,7 @@
     .rec-btn-primary {
       background: var(--primary);
       border-color: var(--primary);
-      color: #fff;
+      color: var(--bg);
     }
     .rec-btn-primary:hover { background: var(--primary-light, var(--primary)); }
     .rec-btn-stop {
@@ -3069,7 +3032,7 @@
     }
     .home-record-card:hover {
       border-color: var(--primary-dim, var(--primary));
-      box-shadow: 0 2px 12px rgba(124, 58, 237, 0.10);
+      box-shadow: 0 2px 12px var(--primary-dim);
     }
     .home-record-main {
       flex: 1;
@@ -3088,8 +3051,8 @@
       width: 52px;
       height: 52px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--primary), var(--primary-2, var(--primary)));
-      color: #fff;
+      background: var(--primary);
+      color: var(--bg);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -3344,14 +3307,6 @@
       border-top: 1px solid var(--border);
       background: var(--surface2);
     }
-    .transcript-preview-footer .action-btn.danger {
-      color: var(--danger, #ef4444);
-      border-color: rgba(239, 68, 68, 0.4);
-    }
-    .transcript-preview-footer .action-btn.danger:hover {
-      background: rgba(239, 68, 68, 0.12);
-    }
-
     /* ─────────────────────────────────────────────────
        Exam plan badges + registration modal
        ───────────────────────────────────────────────── */
@@ -3374,7 +3329,7 @@
       stroke-width: 2;
     }
     .exam-badge-red    { background: rgba(239, 68, 68, 0.16);  color: #ef4444; }
-    .exam-badge-orange { background: rgba(249, 115, 22, 0.16); color: #f97316; }
+    .exam-badge-orange { background: var(--accent-dim); color: var(--accent); }
     .exam-badge-green  { background: rgba(34, 197, 94, 0.16);  color: #22c55e; }
     .exam-badge-gray   { background: var(--surface2);          color: var(--text-muted); }
     .srs-due-badge {
@@ -3387,8 +3342,8 @@
       border-radius: 4px;
       margin-left: 5px;
       vertical-align: middle;
-      background: rgba(124, 58, 237, 0.16);
-      color: #7c3aed;
+      background: var(--primary-dim);
+      color: var(--primary);
       letter-spacing: 0.02em;
     }
 
@@ -3635,26 +3590,6 @@
       border-top: 1px solid var(--border);
       background: var(--surface2);
     }
-    .exam-plan-footer .action-btn.primary {
-      background: var(--primary);
-      color: #fff;
-      border-color: var(--primary);
-    }
-    .exam-plan-footer .action-btn.primary:hover {
-      filter: brightness(1.08);
-    }
-    .exam-plan-footer .action-btn.primary:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    .exam-plan-footer .action-btn.danger {
-      color: var(--danger, #ef4444);
-      border-color: rgba(239, 68, 68, 0.4);
-    }
-    .exam-plan-footer .action-btn.danger:hover {
-      background: rgba(239, 68, 68, 0.12);
-    }
-
     /* ─────────────────────────────────────────────────
        UI overhaul (Phase 1): Lucide icons + new
        sidebar/topbar styles. Layout-critical inline
@@ -3690,11 +3625,11 @@
       width: 22px;
       height: 22px;
       border-radius: 6px;
-      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      background: var(--primary);
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      color: #fff;
+      color: var(--bg);
     }
     .topbar-logo-mark svg.lucide,
     .topbar-logo-mark [data-lucide] {
@@ -3844,7 +3779,7 @@
     .home-record-icon [data-lucide] {
       width: 24px;
       height: 24px;
-      color: #fff;
+      color: var(--bg);
       stroke-width: 2;
     }
     .home-record-link {
@@ -4025,13 +3960,8 @@
     }
 
     /* Action-btn icon alignment — buttons that have <i data-lucide> + <span> */
-    .action-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-    }
-    .action-btn svg.lucide,
-    .action-btn [data-lucide] {
+    .ny-btn svg.lucide,
+    .ny-btn [data-lucide] {
       width: 14px;
       height: 14px;
     }
@@ -4047,25 +3977,49 @@
     /* ── Light Theme ─────────────────────────────── */
     :root.light {
       --bg: #ffffff;
-      --surface: #f8f9fa;
-      --surface2: #f0f1f3;
-      --surface2-rgb: 240, 241, 243;
-      --surface3: #e9ecef;
-      --text: #1a1a2e;
-      --text-muted: #6b7280;
-      --text-dim: #aaa;
-      --border: #e0e0e0;
-      --border-bright: #d0d0d0;
+      --surface: #f7f6f5;
+      --surface2: #f2f1f0;
+      --surface2-rgb: 242, 241, 240;
+      --surface3: #e6e5e3;
+      --text: #1c1b1a;
+      --text-muted: #5e5d5b;
+      /* Measured, not eyeballed: #6e6d6b cleared 4.5:1 on --bg but only hit
+         4.11:1 on --surface3, and --text-dim does land on sunken surfaces.
+         #666563 is the lightest value that clears 4.5:1 on every surface. */
+      --text-dim: #666563;
+      --border: #e6e5e3;
+      --border-bright: #d4d3d1;
+      /* Phase B: the light block used to inherit --primary/--secondary/--accent
+         and the status colours from the dark :root, which is how the old
+         purple accent and success green ended up on a white background.
+         Every one of them is
+         overridden here now — the inversion flips, so --primary is near-black
+         on light and fills pair with `color: var(--bg)` = white. */
+      --primary: #1c1b1a;
+      --primary-dim: rgba(28, 27, 26, 0.08);
+      --primary-bright: #000000;
+      --primary-deep: #5e5d5b;
+      --secondary: #5e5d5b;
+      --secondary-dim: rgba(94, 93, 91, 0.10);
+      --accent: #1c1b1a;
+      --accent-dim: rgba(28, 27, 26, 0.08);
+      --accent-soft: #5e5d5b;
+      /* Status colours darkened for >=4.5:1 on white (the dark-theme values
+         are far too light to read on this canvas). */
+      --success: #15803d;
+      --success-dim: rgba(21, 128, 61, 0.10);
+      --warning: #a16207;
+      --danger: #b91c1c;
       /* Light-theme shadow tokens — softer than the dark variant. */
       --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
       --shadow-md: 0 2px 8px rgba(15, 23, 42, 0.08);
       --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.12);
 
-      /* Q4: light-theme note-content emphasis — same hue family as dark
-         (indigo/violet/blue), darkened for ≥4.5:1 contrast on white. */
-      --md-heading: #4338ca;
-      --md-strong: #6d28d9;
-      --md-em: #0369a1;
+      /* Q4: light-theme note-content emphasis — value/weight, matched to the
+         dark block's roles and darkened for >=4.5:1 contrast on white. */
+      --md-heading: #1c1b1a;
+      --md-strong: #000000;
+      --md-em: #5e5d5b;
       --md-highlight: #92400e;
     }
 
@@ -4150,7 +4104,7 @@
     .skeleton-line.long { width:100%; }
 
     /* ── Notion note badge ──────────────────────── */
-    .notion-type-badge { position:absolute; top:0.4rem; right:0.4rem; font-size:0.65rem; font-weight:700; padding:0.1rem 0.35rem; border-radius:5px; background:rgba(0,180,216,0.15); color:var(--secondary); border:1px solid rgba(0,180,216,0.3); pointer-events:none; }
+    .notion-type-badge { position:absolute; top:0.4rem; right:0.4rem; font-size:0.65rem; font-weight:700; padding:0.1rem 0.35rem; border-radius:5px; background:var(--secondary-dim); color:var(--secondary); border:1px solid var(--secondary-dim); pointer-events:none; }
 
     /* ── Notion upload zone ─────────────────────── */
     .notion-upload-section { margin-top:1.25rem; border:2px dashed var(--border); border-radius:var(--radius); padding:1.4rem 1.5rem; background:var(--surface); transition:all 0.25s; }
@@ -4161,12 +4115,12 @@
     .notion-upload-subtitle { font-size:0.82rem; color:var(--text-muted); margin-bottom:0.5rem; line-height:1.5; }
     .notion-upload-help { font-size:0.76rem; color:var(--text-dim); background:var(--surface2); border-radius:6px; padding:0.3rem 0.6rem; margin-bottom:0.75rem; }
     .notion-upload-btn-row { display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; }
-    .notion-upload-btn { position:relative; display:inline-flex; align-items:center; gap:0.4rem; padding:0.5rem 1.1rem; background:var(--secondary-dim); border:1px solid rgba(0,180,216,0.4); border-radius:8px; color:var(--secondary); font-size:0.88rem; font-weight:600; cursor:pointer; overflow:hidden; transition:background 0.15s; }
-    .notion-upload-btn:hover { background:rgba(0,180,216,0.22); }
+    .notion-upload-btn { position:relative; display:inline-flex; align-items:center; gap:0.4rem; padding:0.5rem 1.1rem; background:var(--secondary-dim); border:1px solid var(--secondary-dim); border-radius:8px; color:var(--secondary); font-size:0.88rem; font-weight:600; cursor:pointer; overflow:hidden; transition:background 0.15s; }
+    .notion-upload-btn:hover { background:var(--secondary-dim); }
     .notion-upload-btn input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
     .notion-upload-tag { display:none; align-items:center; gap:0.4rem; padding:0.25rem 0.6rem; background:var(--success-dim); border:1px solid rgba(74,222,128,0.3); border-radius:99px; font-size:0.78rem; color:var(--success); font-weight:500; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .notion-upload-tag.visible { display:inline-flex; }
-    .notion-upload-process-btn { padding:0.5rem 1.2rem; background:linear-gradient(135deg,var(--secondary),#0077a8); border:none; border-radius:8px; color:#fff; font-size:0.88rem; font-weight:700; cursor:pointer; display:none; transition:opacity 0.15s; }
+    .notion-upload-process-btn { padding:0.5rem 1.2rem; background:var(--secondary); border:none; border-radius:8px; color:var(--bg); font-size:0.88rem; font-weight:700; cursor:pointer; display:none; transition:opacity 0.15s; }
     .notion-upload-process-btn:hover { opacity:0.85; }
     .notion-upload-process-btn.visible { display:inline-block; }
 
@@ -4254,12 +4208,12 @@
         display:none !important;
       }
       /* Top bar buttons: hide labels, keep icons only on narrow screens */
-      #splitTopBar .action-btn {
+      #splitTopBar .ny-btn {
         padding:0.4rem 0.55rem !important;
         font-size:0 !important;
       }
-      #splitTopBar .action-btn .icon-sm,
-      #splitTopBar .action-btn .icon-xs {
+      #splitTopBar .ny-btn .icon-sm,
+      #splitTopBar .ny-btn .icon-xs {
         font-size:1rem !important;
       }
       /* Round 7: fit-to-screen — keep horizontal scroll from leaking outside
@@ -4334,7 +4288,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script defer src="https://js.tosspayments.com/v2/standard"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
-<script defer src="/js/markdown.js?v=u15polish"></script>
+<script defer src="/js/markdown.js?v=uibphaseb"></script>
 </head>
 <body>
 
@@ -4354,19 +4308,19 @@
       <i data-lucide="search"></i>
       <input id="globalSearchInput" type="text" placeholder="검색..." />
     </div>
-    <button id="loginBtn" class="action-btn" onclick="loginWithGoogle()" style="font-size:0.82rem; display:inline-flex; align-items:center; gap:0.35rem;">
+    <button id="loginBtn" class="ny-btn ny-btn-secondary" onclick="loginWithGoogle()" style="font-size:0.82rem; display:inline-flex; align-items:center; gap:0.35rem;">
       <i data-lucide="log-in" class="icon-sm"></i>
       <span>로그인</span>
     </button>
     <div id="userInfo" style="display:none; align-items:center; gap:0.4rem;">
       <img id="userAvatar" style="width:24px; height:24px; border-radius:50%; border:1px solid var(--border);" />
       <span id="userName" style="font-size:0.8rem; color:var(--text); max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-      <button class="action-btn" onclick="logout()" style="font-size:0.75rem; padding:0.2rem 0.5rem;">로그아웃</button>
+      <button class="ny-btn ny-btn-secondary" onclick="logout()" style="font-size:0.75rem; padding:0.2rem 0.5rem;">로그아웃</button>
     </div>
-    <button class="action-btn icon-btn" id="themeToggleBtn" onclick="toggleTheme()" aria-label="테마 변경">
+    <button class="ny-btn ny-btn-secondary icon-btn" id="themeToggleBtn" onclick="toggleTheme()" aria-label="테마 변경">
       <i data-lucide="sun"></i>
     </button>
-    <button class="action-btn icon-btn" id="settingsBtn" onclick="toggleSettings()" aria-label="설정">
+    <button class="ny-btn ny-btn-secondary icon-btn" id="settingsBtn" onclick="toggleSettings()" aria-label="설정">
       <i data-lucide="settings"></i>
     </button>
   </div>
@@ -4401,9 +4355,9 @@
   <div>
     <div class="settings-panel-row">데이터</div>
     <div style="display:flex; flex-direction:column; gap:0.4rem;">
-      <button class="action-btn" style="text-align:left; display:inline-flex; align-items:center; gap:0.4rem;" onclick="exportAllNotes()"><i data-lucide="arrow-down-to-line" class="icon-sm"></i><span>노트 내보내기</span></button>
-      <label class="action-btn" style="cursor:pointer; text-align:left; display:inline-flex; align-items:center; gap:0.4rem;"><i data-lucide="arrow-up-from-line" class="icon-sm"></i><span>노트 가져오기</span><input type="file" id="importNotesInput" accept=".json" style="display:none;" onchange="importNotes(this)" /></label>
-      <button class="action-btn" style="text-align:left; color:#fca5a5; border-color:rgba(248,113,113,0.3); display:inline-flex; align-items:center; gap:0.4rem;" onclick="clearAllStorage()"><i data-lucide="trash-2" class="icon-sm"></i><span>저장소 초기화</span></button>
+      <button class="ny-btn ny-btn-secondary" style="text-align:left; display:inline-flex; align-items:center; gap:0.4rem;" onclick="exportAllNotes()"><i data-lucide="arrow-down-to-line" class="icon-sm"></i><span>노트 내보내기</span></button>
+      <label class="ny-btn ny-btn-secondary" style="cursor:pointer; text-align:left; display:inline-flex; align-items:center; gap:0.4rem;"><i data-lucide="arrow-up-from-line" class="icon-sm"></i><span>노트 가져오기</span><input type="file" id="importNotesInput" accept=".json" style="display:none;" onchange="importNotes(this)" /></label>
+      <button class="ny-btn ny-btn-secondary" style="text-align:left; color:#fca5a5; border-color:rgba(248,113,113,0.3); display:inline-flex; align-items:center; gap:0.4rem;" onclick="clearAllStorage()"><i data-lucide="trash-2" class="icon-sm"></i><span>저장소 초기화</span></button>
     </div>
   </div>
   <div style="font-size:0.72rem; color:var(--text-muted); border-top:1px solid var(--border); padding-top:0.5rem; display:inline-flex; align-items:center; gap:0.35rem;">
@@ -4435,7 +4389,7 @@
          nav. showPaymentModal('voluntary') reads getUserUsage() and switches
          to a "Pro 구독 중" thank-you panel for users who already pay, so
          the button is safe to show to everyone. -->
-    <button class="sidebar-btn" onclick="showPaymentModal('voluntary')" style="background:linear-gradient(135deg,rgba(124,77,255,0.12),rgba(0,180,216,0.12));" id="sidebarUpgradeBtn">
+    <button class="sidebar-btn" onclick="showPaymentModal('voluntary')" style="background:var(--surface3);" id="sidebarUpgradeBtn">
       <i data-lucide="sparkles" style="color:var(--secondary);"></i>
       <span>업그레이드</span>
     </button>
@@ -4478,25 +4432,29 @@
   <div id="batchBuddyChar">
     <svg viewBox="0 0 64 64" width="64" height="64" xmlns="http://www.w3.org/2000/svg">
       <!-- Body: notebook shape -->
-      <rect x="10" y="8" width="36" height="42" rx="4" fill="#7c3aed"/>
+      <rect x="10" y="8" width="36" height="42" rx="4" fill="currentColor"/>
       <!-- Notebook spine -->
-      <rect x="10" y="8" width="6" height="42" rx="2" fill="#5b21b6"/>
-      <!-- Notebook lines -->
-      <line x1="22" y1="20" x2="42" y2="20" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
-      <line x1="22" y1="27" x2="42" y2="27" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
-      <line x1="22" y1="34" x2="42" y2="34" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+      <rect x="10" y="8" width="6" height="42" rx="2" fill="var(--primary-deep)"/>
+      <!-- Notebook lines. Everything drawn ON the body uses var(--bg), the
+           body's inverse — the body is currentColor = --primary, which is
+           near-white in dark theme, so the old hardcoded `white` details
+           disappeared into it. Inverting keeps the buddy legible in both
+           themes with one value. -->
+      <line x1="22" y1="20" x2="42" y2="20" stroke="var(--bg)" stroke-width="2" stroke-linecap="round"/>
+      <line x1="22" y1="27" x2="42" y2="27" stroke="var(--bg)" stroke-width="2" stroke-linecap="round"/>
+      <line x1="22" y1="34" x2="42" y2="34" stroke="var(--bg)" stroke-width="2" stroke-linecap="round"/>
       <!-- Eyes wrapped in group for blink animation -->
       <g class="buddy-eyes">
-        <circle class="buddy-eye-normal" cx="24" cy="14" r="2.5" fill="white"/>
-        <circle class="buddy-eye-normal" cx="34" cy="14" r="2.5" fill="white"/>
+        <circle class="buddy-eye-normal" cx="24" cy="14" r="2.5" fill="var(--bg)"/>
+        <circle class="buddy-eye-normal" cx="34" cy="14" r="2.5" fill="var(--bg)"/>
       </g>
       <!-- Eyes (happy — shown via CSS when done) -->
-      <text class="buddy-eye-happy" x="20" y="17" font-size="7" fill="white" display="none">^^</text>
+      <text class="buddy-eye-happy" x="20" y="17" font-size="7" fill="var(--bg)" display="none">^^</text>
       <!-- Smile -->
-      <path class="buddy-mouth" d="M22 18 Q29 22 36 18" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <path class="buddy-mouth" d="M22 18 Q29 22 36 18" stroke="var(--bg)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
       <!-- Legs -->
-      <rect x="16" y="50" width="8" height="10" rx="3" fill="#7c3aed"/>
-      <rect x="32" y="50" width="8" height="10" rx="3" fill="#7c3aed"/>
+      <rect x="16" y="50" width="8" height="10" rx="3" fill="currentColor"/>
+      <rect x="32" y="50" width="8" height="10" rx="3" fill="currentColor"/>
       <!-- Pencil (held to the right, animated) -->
       <g class="buddy-pencil">
         <rect x="44" y="28" width="5" height="20" rx="1.5" fill="#fbbf24" transform="rotate(20 46 38)"/>
@@ -4744,20 +4702,20 @@
           <h2 id="allNotesTitle" style="font-size:1.1rem; font-weight:700; color:var(--text); display:flex; align-items:center; gap:0.4rem; min-width:0; overflow:hidden;">모든 노트</h2>
         </div>
         <div style="display:flex;gap:0.4rem;flex-shrink:0;">
-          <button id="folderExamPlanBtn" class="action-btn" style="display:none;" onclick="if (window._activeFolderId && _activeFolderId !== 'none' && typeof openExamPlanModal === 'function') openExamPlanModal(_activeFolderId)">
+          <button id="folderExamPlanBtn" class="ny-btn ny-btn-secondary" style="display:none;" onclick="if (window._activeFolderId && _activeFolderId !== 'none' && typeof openExamPlanModal === 'function') openExamPlanModal(_activeFolderId)">
             <i data-lucide="graduation-cap" class="icon-sm"></i>
             <span>시험 등록</span>
           </button>
-          <button id="examReviewBtn" class="action-btn" style="display:none;" onclick="launchExamReview()">
+          <button id="examReviewBtn" class="ny-btn ny-btn-secondary" style="display:none;" onclick="launchExamReview()">
             <i data-lucide="clipboard-list" class="icon-sm"></i>
             <span>시험 대비 요약</span>
           </button>
-          <button id="bulkSelectToggleBtn" class="action-btn" onclick="toggleBulkSelectMode()">선택</button>
-          <button class="action-btn" onclick="showImportNoteModal()">
+          <button id="bulkSelectToggleBtn" class="ny-btn ny-btn-secondary" onclick="toggleBulkSelectMode()">선택</button>
+          <button class="ny-btn ny-btn-secondary" onclick="showImportNoteModal()">
             <i data-lucide="download" class="icon-sm"></i>
             <span>가져오기</span>
           </button>
-          <button class="action-btn" onclick="showFolderManager()">
+          <button class="ny-btn ny-btn-secondary" onclick="showFolderManager()">
             <i data-lucide="folder-cog" class="icon-sm"></i>
             <span>폴더 관리</span>
           </button>
@@ -4774,7 +4732,7 @@
         <div id="emptyHomeIcon" style="display:inline-flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:14px; background:var(--surface2); margin-bottom:0.8rem;"><i data-lucide="notebook-pen" style="width:26px; height:26px; color:var(--text-muted);"></i></div>
         <div id="emptyHomeMsgText" style="font-size:1rem; font-weight:600; color:var(--text); margin-bottom:0.3rem;">아직 저장된 노트가 없습니다</div>
         <div id="emptyHomeSubText" style="font-size:0.82rem; margin-bottom:1.2rem;">AI 분석을 완료하면 자동으로 저장됩니다</div>
-        <button id="emptyHomeNewBtn" class="action-btn" style="padding:0.5rem 1.4rem; font-size:0.88rem; display:inline-flex; align-items:center; gap:0.35rem;" onclick="switchView('new')">
+        <button id="emptyHomeNewBtn" class="ny-btn ny-btn-secondary" style="padding:0.5rem 1.4rem; font-size:0.88rem; display:inline-flex; align-items:center; gap:0.35rem;" onclick="switchView('new')">
           <i data-lucide="plus" class="icon-sm"></i>
           <span>새 노트 만들기</span>
         </button>
@@ -4795,14 +4753,14 @@
       <h2 style="font-size:1.1rem; font-weight:700; color:var(--text);">
         🎙 내 녹취록 <span id="transcriptsViewCount" style="color:var(--text-muted); font-weight:400; margin-left:0.3rem;">0</span>
       </h2>
-      <button class="action-btn" type="button" onclick="if (typeof openRecorderModal === 'function') openRecorderModal()">+ 새 녹음</button>
+      <button class="ny-btn ny-btn-secondary" type="button" onclick="if (typeof openRecorderModal === 'function') openRecorderModal()">+ 새 녹음</button>
     </div>
     <div id="transcriptsGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:1rem;"></div>
     <div id="emptyTranscriptsMsg" style="display:none; text-align:center; padding:3rem; color:var(--text-muted);">
       <div style="font-size:3.5rem; margin-bottom:0.8rem;">🎙</div>
       <div style="font-size:1rem; font-weight:600; color:var(--text); margin-bottom:0.3rem;">아직 저장된 녹취록이 없습니다</div>
       <div style="font-size:0.82rem; margin-bottom:1.2rem;">홈에서 녹음하면 이곳에 자동으로 저장됩니다</div>
-      <button class="action-btn" type="button" style="padding:0.5rem 1.4rem; font-size:0.88rem;" onclick="if (typeof openRecorderModal === 'function') openRecorderModal()">🎙 녹음 시작</button>
+      <button class="ny-btn ny-btn-secondary" type="button" style="padding:0.5rem 1.4rem; font-size:0.88rem;" onclick="if (typeof openRecorderModal === 'function') openRecorderModal()">🎙 녹음 시작</button>
     </div>
   </div>
 
@@ -4893,7 +4851,7 @@
       <div class="batch-staging-section">
         <div class="batch-staging-label"><i data-lucide="mic" class="icon-sm"></i> ② 녹취록 (선택사항)</div>
         <div id="batchSessionList" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
-        <button id="addSessionBtn" class="action-btn" style="font-size:0.8rem; margin-top:0.5rem; width:100%;">＋ 교시 추가</button>
+        <button id="addSessionBtn" class="ny-btn ny-btn-secondary" style="font-size:0.8rem; margin-top:0.5rem; width:100%;">＋ 교시 추가</button>
       </div>
       <!-- U14: 저장 폴더 선택 -->
       <div class="batch-staging-section">
@@ -4955,14 +4913,14 @@
         <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
           <button class="collapse-btn" id="collapseBtn"><i data-lucide="chevron-up" class="icon-xs"></i> 접기</button>
           <div class="notes-actions" id="notesActions">
-            <button class="action-btn" id="notionCopyBtn" disabled><i data-lucide="clipboard" class="icon-sm"></i> 노션</button>
-            <button class="action-btn" id="dlNotionFileBtn" disabled><i data-lucide="file-text" class="icon-sm"></i> 노션파일</button>
-            <button class="action-btn" id="copyNotesBtn" disabled><i data-lucide="clipboard" class="icon-sm"></i> 복사</button>
-            <button class="action-btn" id="dlTxtBtn" disabled><i data-lucide="arrow-down-to-line" class="icon-sm"></i> .txt</button>
-            <button class="action-btn" id="dlMdBtn" disabled><i data-lucide="arrow-down-to-line" class="icon-sm"></i> .md</button>
-            <button class="action-btn" id="dlPdfBtn" disabled><i data-lucide="arrow-down-to-line" class="icon-sm"></i> PDF</button>
-            <button class="action-btn" id="splitViewBtn" disabled><i data-lucide="book-open" class="icon-sm"></i> 뷰어</button>
-            <button class="action-btn" id="shareGroupBtn" disabled title="친구들과 STT 비용 나누고 노트 공유"><i data-lucide="users" class="icon-sm"></i> 친구랑 나누기</button>
+            <button class="ny-btn ny-btn-secondary" id="notionCopyBtn" disabled><i data-lucide="clipboard" class="icon-sm"></i> 노션</button>
+            <button class="ny-btn ny-btn-secondary" id="dlNotionFileBtn" disabled><i data-lucide="file-text" class="icon-sm"></i> 노션파일</button>
+            <button class="ny-btn ny-btn-secondary" id="copyNotesBtn" disabled><i data-lucide="clipboard" class="icon-sm"></i> 복사</button>
+            <button class="ny-btn ny-btn-secondary" id="dlTxtBtn" disabled><i data-lucide="arrow-down-to-line" class="icon-sm"></i> .txt</button>
+            <button class="ny-btn ny-btn-secondary" id="dlMdBtn" disabled><i data-lucide="arrow-down-to-line" class="icon-sm"></i> .md</button>
+            <button class="ny-btn ny-btn-secondary" id="dlPdfBtn" disabled><i data-lucide="arrow-down-to-line" class="icon-sm"></i> PDF</button>
+            <button class="ny-btn ny-btn-secondary" id="splitViewBtn" disabled><i data-lucide="book-open" class="icon-sm"></i> 뷰어</button>
+            <button class="ny-btn ny-btn-secondary" id="shareGroupBtn" disabled title="친구들과 STT 비용 나누고 노트 공유"><i data-lucide="users" class="icon-sm"></i> 친구랑 나누기</button>
           </div>
         </div>
       </div>
@@ -5011,7 +4969,7 @@
       <div class="image-gallery-grid" id="imageGalleryGrid"></div>
       <div class="image-selection-bar" id="imageSelectionBar">
         <span class="image-selection-hint" id="imageSelectionHint">AI 추천 이미지가 미리 선택됐습니다. 조정 후 삽입하세요.</span>
-        <button class="action-btn" id="imageConfirmBtn"><i data-lucide="check-circle-2" class="icon-sm"></i> 선택 완료 — 노트에 삽입</button>
+        <button class="ny-btn ny-btn-secondary" id="imageConfirmBtn"><i data-lucide="check-circle-2" class="icon-sm"></i> 선택 완료 — 노트에 삽입</button>
       </div>
     </div>
 
@@ -5104,10 +5062,10 @@
   <div id="splitTopBar" style="height:48px; display:flex; align-items:center; justify-content:space-between; padding:0 1rem; background:var(--surface2); border-bottom:1px solid var(--border); flex-shrink:0;">
     <span style="font-size:0.9rem; font-weight:600; color:var(--text);"><i data-lucide="book-open" class="icon-sm"></i> 슬라이드 + 학습 노트</span>
     <div style="display:flex; gap:0.5rem; align-items:center;">
-      <button id="splitDebugBtn" class="action-btn" title="디버그 리포트 복사" style="display:none; font-size:0.85rem; padding:0.25rem 0.5rem;" onclick="copyDebugReport()"><i data-lucide="clipboard" class="icon-xs"></i></button>
-      <button id="splitNotionBtn" class="action-btn"><i data-lucide="clipboard" class="icon-sm"></i> 노션</button>
-      <button id="splitPdfBtn" class="action-btn"><i data-lucide="arrow-down-to-line" class="icon-sm"></i> PDF</button>
-      <button id="splitCloseBtn" class="action-btn"><i data-lucide="x" class="icon-xs"></i> 닫기</button>
+      <button id="splitDebugBtn" class="ny-btn ny-btn-secondary" title="디버그 리포트 복사" style="display:none; font-size:0.85rem; padding:0.25rem 0.5rem;" onclick="copyDebugReport()"><i data-lucide="clipboard" class="icon-xs"></i></button>
+      <button id="splitNotionBtn" class="ny-btn ny-btn-secondary"><i data-lucide="clipboard" class="icon-sm"></i> 노션</button>
+      <button id="splitPdfBtn" class="ny-btn ny-btn-secondary"><i data-lucide="arrow-down-to-line" class="icon-sm"></i> PDF</button>
+      <button id="splitCloseBtn" class="ny-btn ny-btn-secondary"><i data-lucide="x" class="icon-xs"></i> 닫기</button>
     </div>
   </div>
   <div style="display:flex; flex:1; overflow:hidden;">
@@ -5133,7 +5091,7 @@
           <span style="font-size:0.85rem; font-weight:600; color:var(--text-muted);"><i data-lucide="image" class="icon-sm"></i> 슬라이드 이미지 선택</span>
           <div style="display:flex; align-items:center; gap:0.8rem;">
             <span id="splitImageCount" style="font-size:0.8rem; color:var(--secondary);"></span>
-            <button class="action-btn" id="splitImageInsertBtn" style="display:none;"><i data-lucide="check-circle-2" class="icon-sm"></i> 노트에 삽입</button>
+            <button class="ny-btn ny-btn-secondary" id="splitImageInsertBtn" style="display:none;"><i data-lucide="check-circle-2" class="icon-sm"></i> 노트에 삽입</button>
             <span id="splitImageToggle" style="font-size:0.7rem; color:var(--text-muted);"><i data-lucide="chevron-up" class="icon-xs"></i></span>
           </div>
         </div>
@@ -5146,11 +5104,11 @@
 <!-- Notion Viewer (full-screen overlay) -->
 <div id="notionViewer">
   <div class="notion-viewer-topbar">
-    <button id="notionViewerBackBtn" class="action-btn"><i data-lucide="arrow-left" class="icon-sm"></i> 뒤로</button>
+    <button id="notionViewerBackBtn" class="ny-btn ny-btn-secondary"><i data-lucide="arrow-left" class="icon-sm"></i> 뒤로</button>
     <span id="notionViewerTitle" class="notion-viewer-title"></span>
     <div style="display:flex;gap:0.4rem;align-items:center;flex-shrink:0;">
-      <button id="notionViewerRenameBtn" class="action-btn" title="이름 변경"><i data-lucide="pencil" class="icon-sm"></i></button>
-      <button id="notionViewerDeleteBtn" class="action-btn" title="삭제"><i data-lucide="trash-2" class="icon-sm"></i></button>
+      <button id="notionViewerRenameBtn" class="ny-btn ny-btn-secondary" title="이름 변경"><i data-lucide="pencil" class="icon-sm"></i></button>
+      <button id="notionViewerDeleteBtn" class="ny-btn ny-btn-secondary" title="삭제"><i data-lucide="trash-2" class="icon-sm"></i></button>
     </div>
   </div>
   <div class="notion-viewer-tabs">
@@ -5176,52 +5134,52 @@
   </div>
 </div>
 
-<script defer src="/js/constants.js?v=u15polish"></script>
-<script defer src="/js/error_autoreport.js?v=u15polish"></script>
-<script defer src="/js/icons.js?v=u15polish"></script>
-<script defer src="/js/storage.js?v=u15polish"></script>
-<script defer src="/js/firestore_sync.js?v=u18cache"></script>
-<script defer src="/js/transcripts_store.js?v=u18cache"></script>
-<script defer src="/js/api.js?v=u15polish"></script>
-<script defer src="/js/pptx_parser.js?v=r1speed"></script>
-<script defer src="/js/quiz.js?v=u15polish"></script>
-<script defer src="/js/ui.js?v=u15polish"></script>
-<script defer src="/js/viewers.js?v=u15polish"></script>
-<script defer src="/js/image_gallery.js?v=u15polish"></script>
-<script defer src="/js/deixis.js?v=u17fix"></script>
-<script defer src="/js/pipeline.js?v=u17fix"></script>
-<script defer src="/js/batch.js?v=u15polish"></script>
-<script defer src="/js/note_creation.js?v=r1speed"></script>
-<script defer src="/js/notes_crud.js?v=u15polish"></script>
-<script defer src="/js/notion_viewer.js?v=u15polish"></script>
-<script defer src="/js/notion_clipboard.js?v=u15polish"></script>
-<script defer src="/js/folders.js?v=u15polish"></script>
-<script defer src="/js/exam_plan.js?v=u15polish"></script>
-<script defer src="/js/srs.js?v=u15polish"></script>
-<script defer src="/js/timetable.js?v=u15polish"></script>
-<script defer src="/js/srs_review.js?v=u15polish"></script>
-<script defer src="/js/home_view.js?v=u18tsearch"></script>
-<script defer src="/js/transcripts_view.js?v=u18pick"></script>
-<script defer src="/js/bulk.js?v=u15polish"></script>
-<script defer src="/js/firebase_auth.js?v=u19auth"></script>
-<script defer src="/js/payment.js?v=u15polish"></script>
-<script defer src="/js/recorder.js?v=u17deixis"></script>
-<script defer src="/js/groups.js?v=s1invite"></script>
-<script defer src="/js/study_rooms.js?v=s1invite"></script>
-<script defer src="/js/bug_report.js?v=u18vars"></script>
-<script defer src="/js/onboarding_tour.js?v=u15polish"></script>
-<script defer src="/js/main.js?v=u19auth"></script>
-<script defer src="/js/main_inline.js?v=u18snippet"></script>
+<script defer src="/js/constants.js?v=uibphaseb"></script>
+<script defer src="/js/error_autoreport.js?v=uibphaseb"></script>
+<script defer src="/js/icons.js?v=uibphaseb"></script>
+<script defer src="/js/storage.js?v=uibphaseb"></script>
+<script defer src="/js/firestore_sync.js?v=uibphaseb"></script>
+<script defer src="/js/transcripts_store.js?v=uibphaseb"></script>
+<script defer src="/js/api.js?v=uibphaseb"></script>
+<script defer src="/js/pptx_parser.js?v=uibphaseb"></script>
+<script defer src="/js/quiz.js?v=uibphaseb"></script>
+<script defer src="/js/ui.js?v=uibphaseb"></script>
+<script defer src="/js/viewers.js?v=uibphaseb"></script>
+<script defer src="/js/image_gallery.js?v=uibphaseb"></script>
+<script defer src="/js/deixis.js?v=uibphaseb"></script>
+<script defer src="/js/pipeline.js?v=uibphaseb"></script>
+<script defer src="/js/batch.js?v=uibphaseb"></script>
+<script defer src="/js/note_creation.js?v=uibphaseb"></script>
+<script defer src="/js/notes_crud.js?v=uibphaseb"></script>
+<script defer src="/js/notion_viewer.js?v=uibphaseb"></script>
+<script defer src="/js/notion_clipboard.js?v=uibphaseb"></script>
+<script defer src="/js/folders.js?v=uibphaseb"></script>
+<script defer src="/js/exam_plan.js?v=uibphaseb"></script>
+<script defer src="/js/srs.js?v=uibphaseb"></script>
+<script defer src="/js/timetable.js?v=uibphaseb"></script>
+<script defer src="/js/srs_review.js?v=uibphaseb"></script>
+<script defer src="/js/home_view.js?v=uibphaseb"></script>
+<script defer src="/js/transcripts_view.js?v=uibphaseb"></script>
+<script defer src="/js/bulk.js?v=uibphaseb"></script>
+<script defer src="/js/firebase_auth.js?v=uibphaseb"></script>
+<script defer src="/js/payment.js?v=uibphaseb"></script>
+<script defer src="/js/recorder.js?v=uibphaseb"></script>
+<script defer src="/js/groups.js?v=uibphaseb"></script>
+<script defer src="/js/study_rooms.js?v=uibphaseb"></script>
+<script defer src="/js/bug_report.js?v=uibphaseb"></script>
+<script defer src="/js/onboarding_tour.js?v=uibphaseb"></script>
+<script defer src="/js/main.js?v=uibphaseb"></script>
+<script defer src="/js/main_inline.js?v=uibphaseb"></script>
 <div id="bulkDeleteBar">
   <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;color:var(--text-muted);">
     <input type="checkbox" id="bulkSelectAllChk" onchange="toggleBulkSelectAll(this.checked)" style="accent-color:var(--primary);width:15px;height:15px;">
     전체 선택
   </label>
   <span id="bulkSelectCount" style="color:var(--text);font-weight:600;">0개 선택됨</span>
-  <button class="action-btn" onclick="bulkNotionCopy()" style="border-color:#7c3aed;color:#7c3aed;background:rgba(124,58,237,0.1);">📋 노션</button>
-  <button class="action-btn" onclick="bulkExportPdf()" style="border-color:#2563eb;color:#2563eb;background:rgba(37,99,235,0.1);">📄 PDF</button>
-  <button class="action-btn" onclick="bulkDeleteSelected()" style="border-color:#ef4444;color:#ef4444;background:rgba(239,68,68,0.1);">🗑 선택 삭제</button>
-  <button class="action-btn" onclick="toggleBulkSelectMode()">취소</button>
+  <button class="ny-btn ny-btn-secondary" onclick="bulkNotionCopy()">📋 노션</button>
+  <button class="ny-btn ny-btn-secondary" onclick="bulkExportPdf()">📄 PDF</button>
+  <button class="ny-btn ny-btn-secondary" onclick="bulkDeleteSelected()" style="border-color:var(--danger);color:var(--danger);background:transparent;">🗑 선택 삭제</button>
+  <button class="ny-btn ny-btn-secondary" onclick="toggleBulkSelectMode()">취소</button>
 </div>
 <div id="debugPanel" style="display:none; position:fixed; bottom:60px; right:20px; width:500px; max-height:50vh; background:var(--surface); border:1px solid var(--border-bright); border-radius:var(--radius); z-index:9999; overflow:hidden; flex-direction:column;">
   <div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0.8rem; background:var(--surface2); border-bottom:1px solid var(--border);">

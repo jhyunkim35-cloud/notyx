@@ -1313,8 +1313,10 @@ function launchExamReview() {
 function renderExamReviewHTML(data, _closeModal) {
   const pct    = n => n === null ? '—' : n + '%';
   const clr    = n => n === null ? 'var(--text-muted)' : n >= 80 ? '#22c55e' : n >= 50 ? '#eab308' : '#ef4444';
+  // background uses color-mix (not the old `${color}22` hex-alpha-suffix trick) so
+  // this also works when `color` is a CSS var(), not just a literal hex string.
   const badge  = (text, color) =>
-    `<span style="font-size:0.72rem;padding:0.1rem 0.45rem;border-radius:8px;background:${color}22;color:${color};font-weight:600;white-space:nowrap;">${escHtml(String(text))}</span>`;
+    `<span style="font-size:0.72rem;padding:0.1rem 0.45rem;border-radius:8px;background:color-mix(in srgb, ${color} 13%, transparent);color:${color};font-weight:600;white-space:nowrap;">${escHtml(String(text))}</span>`;
   const noteTag = title =>
     `<span style="font-size:0.72rem;padding:0.1rem 0.4rem;background:var(--surface3);color:var(--text-muted);border-radius:6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle;">${escHtml(title)}</span>`;
   const gotoBtn = (noteId, section) =>
@@ -1324,7 +1326,7 @@ function renderExamReviewHTML(data, _closeModal) {
   // ── Stats bar ──
   const statsBar = `
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.2rem;">
-      ${badge(data.totalNotes + '개 노트', '#7c3aed')}
+      ${badge(data.totalNotes + '개 노트', 'var(--primary)')}
       ${badge(data.totalQuizQuestions + '문제 분석', '#0ea5e9')}
       ${badge('약점 ' + data.weakSections.length + '개', data.weakSections.length ? '#ef4444' : '#22c55e')}
     </div>`;
@@ -1355,7 +1357,7 @@ function renderExamReviewHTML(data, _closeModal) {
       <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.7rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;margin-bottom:0.35rem;">
         <span style="flex:1;font-size:0.85rem;font-weight:600;color:var(--text);">${escHtml(s.sectionName)}</span>
         ${noteTag(s.noteTitle)}
-        ${badge(s.questionCount + '문제', '#7c3aed')}
+        ${badge(s.questionCount + '문제', 'var(--primary)')}
         ${badge(pct(s.accuracy), clr(s.accuracy))}
         ${gotoBtn(s.noteId, s.sectionName)}
       </div>`).join('');
@@ -1391,7 +1393,7 @@ function renderExamReviewHTML(data, _closeModal) {
     ${statsBar}
     ${sec('trending-down', '#ef4444', '약점 섹션 (정답률 70% 미만)', weakHTML)}
     ${sec('star',          '#eab308', '중요 섹션 (출제 빈도 상위)', importantHTML)}
-    ${sec('bar-chart-3',   '#7c3aed', '전체 섹션 정답률', allHTML)}`;
+    ${sec('bar-chart-3',   'var(--primary)', '전체 섹션 정답률', allHTML)}`;
 }
 
 function renderWeaknessReport(containerEl, report, quizCount) {

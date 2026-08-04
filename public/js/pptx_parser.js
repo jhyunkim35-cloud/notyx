@@ -376,9 +376,9 @@ function checkReady() {
       recOnlyHint.style.cssText = [
         'display:none',
         'font-size:0.82rem',
-        'color:var(--secondary,#00b4d8)',
-        'background:var(--secondary-dim,rgba(0,180,216,0.12))',
-        'border:1px solid rgba(0,180,216,0.22)',
+        'color:var(--secondary)',
+        'background:var(--secondary-dim)',
+        'border:1px solid var(--secondary-dim)',
         'border-radius:6px',
         'padding:0.45rem 0.9rem',
         'margin-top:0.5rem',

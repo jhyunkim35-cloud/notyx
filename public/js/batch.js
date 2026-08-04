@@ -381,7 +381,7 @@ function finalizeCard(item, notesText) {
   actionsEl.innerHTML = '';
 
   const txtBtn = document.createElement('button');
-  txtBtn.className   = 'action-btn';
+  txtBtn.className   = 'ny-btn ny-btn-secondary';
   txtBtn.textContent = '⬇ .txt';
   txtBtn.addEventListener('click', () => {
     triggerDownload(bodyEl.innerText, `학습노트_${baseName}_${dateStamp()}.txt`);
@@ -390,7 +390,7 @@ function finalizeCard(item, notesText) {
   });
 
   const mdBtn = document.createElement('button');
-  mdBtn.className   = 'action-btn';
+  mdBtn.className   = 'ny-btn ny-btn-secondary';
   mdBtn.textContent = '⬇ .md';
   mdBtn.addEventListener('click', () => {
     triggerDownload(notesText, `학습노트_${baseName}_${dateStamp()}.md`);
@@ -399,7 +399,7 @@ function finalizeCard(item, notesText) {
   });
 
   const pdfBtn = document.createElement('button');
-  pdfBtn.className   = 'action-btn';
+  pdfBtn.className   = 'ny-btn ny-btn-secondary';
   pdfBtn.textContent = '⬇ PDF';
   pdfBtn.addEventListener('click', () => {
     // Use print-popup (same as single mode) — more reliable than html2pdf for batch
@@ -409,7 +409,7 @@ function finalizeCard(item, notesText) {
   });
 
   const dbgBtn = document.createElement('button');
-  dbgBtn.className   = 'action-btn';
+  dbgBtn.className   = 'ny-btn ny-btn-secondary';
   dbgBtn.textContent = '📋 디버그';
   dbgBtn.addEventListener('click', () => copyDebugReport());
 

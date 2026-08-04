@@ -85,8 +85,8 @@
         background: var(--surface, #fff); color: var(--text, #0f172a);
       }
       .sr-field input:focus {
-        outline: none; border-color: var(--primary, #7c3aed);
-        box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+        outline: none; border-color: var(--primary);
+        box-shadow: 0 0 0 3px var(--primary-dim);
       }
       .sr-field .sr-hint {
         font-size: 11px; color: var(--text-muted, #94a3b8); margin-top: 4px;
@@ -102,7 +102,7 @@
         font-weight: 600; cursor: pointer; border: none; transition: all 0.15s;
       }
       .sr-btn-primary {
-        background: var(--primary, #7c3aed); color: #fff;
+        background: var(--primary); color: var(--bg);
       }
       .sr-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
       .sr-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -127,8 +127,8 @@
         display: flex; flex-direction: column; gap: 6px;
       }
       .sr-choice-tile:hover {
-        border-color: var(--primary, #7c3aed);
-        background: rgba(124,58,237,0.06);
+        border-color: var(--primary);
+        background: var(--primary-dim);
       }
       .sr-choice-icon { font-size: 22px; }
       .sr-choice-title { font-size: 14px; font-weight: 700; color: var(--text, #0f172a); }
@@ -153,7 +153,7 @@
 
       /* Invite link box (after create) */
       .sr-invite-url {
-        font-family: monospace; font-size: 13px; color: var(--primary, #7c3aed);
+        font-family: monospace; font-size: 13px; color: var(--primary);
         word-break: break-all; background: #fff; padding: 8px 10px;
         border-radius: 6px; border: 1px solid var(--border, #e2e8f0);
       }
@@ -167,7 +167,7 @@
         color: var(--text, #0f172a); display: flex; align-items: center;
         justify-content: center; gap: 6px; transition: all 0.15s;
       }
-      .sr-share-btn:hover { border-color: var(--primary, #7c3aed); }
+      .sr-share-btn:hover { border-color: var(--primary); }
     `;
     const style = document.createElement('style');
     style.id = 'study-rooms-styles';
@@ -366,8 +366,8 @@
     // ever accumulate — because they never linked a folder. Call it out
     // explicitly with the actual code they should paste.
     const nextStep = $('div', {
-      style: 'margin-top:14px;padding:10px 12px;background:rgba(124,58,237,0.08);' +
-             'border-left:3px solid var(--primary,#7c3aed);border-radius:6px;' +
+      style: 'margin-top:14px;padding:10px 12px;background:var(--primary-dim);' +
+             'border-left:3px solid var(--primary);border-radius:6px;' +
              'font-size:12px;line-height:1.5;color:var(--text,#0f172a);',
     });
     nextStep.appendChild($('div', { style: 'font-weight:700;margin-bottom:4px' }, '📝 다음 단계 — 폴더와 연결'));
@@ -508,7 +508,7 @@
   function showJoinSuccess(box, data) {
     box.style.display = 'block';
     box.replaceChildren();
-    box.appendChild($('div', { style: 'font-weight:600;font-size:14px;color:var(--primary,#7c3aed);margin-bottom:6px' },
+    box.appendChild($('div', { style: 'font-weight:600;font-size:14px;color:var(--primary);margin-bottom:6px' },
       '✅ "' + (data.lectureName || '스터디 룸') + '" 합류 완료'));
     box.appendChild($('div', { style: 'font-size:12px;color:var(--text-muted,#64748b)' },
       '현재 멤버 ' + (data.memberCount || 1) + '명' + (data.already ? ' (이미 멤버였어요)' : '')));
@@ -585,8 +585,8 @@
       }
       .sr-status-badge {
         font-size: 11px; font-weight: 600; padding: 3px 9px;
-        border-radius: 999px; background: rgba(124,58,237,0.12);
-        color: var(--primary, #7c3aed);
+        border-radius: 999px; background: var(--primary-dim);
+        color: var(--primary);
       }
       .sr-status-badge--archived {
         background: rgba(148,163,184,0.18); color: #64748b;
@@ -606,12 +606,12 @@
       .sr-meta-value { font-size: 14px; font-weight: 700; color: var(--text, #0f172a); word-break: break-all; }
       .sr-page-meta-invite {
         margin: 0 24px 12px; padding: 9px 14px; border-radius: 8px;
-        border: 1px dashed var(--primary, #7c3aed);
-        background: rgba(124,58,237,0.06);
-        color: var(--primary, #7c3aed); font-size: 13px; font-weight: 600;
+        border: 1px dashed var(--primary);
+        background: var(--primary-dim);
+        color: var(--primary); font-size: 13px; font-weight: 600;
         cursor: pointer; transition: background 0.15s; width: calc(100% - 48px);
       }
-      .sr-page-meta-invite:hover { background: rgba(124,58,237,0.12); }
+      .sr-page-meta-invite:hover { background: var(--primary-dim); }
       .sr-page-section-title {
         margin: 18px 24px 8px; font-size: 13px; font-weight: 700;
         color: var(--text, #0f172a); letter-spacing: 0.01em;
@@ -626,8 +626,8 @@
         border: 1px solid var(--border, #e2e8f0); border-radius: 12px;
       }
       .sr-member-row.is-self {
-        border-color: var(--primary, #7c3aed);
-        background: rgba(124,58,237,0.04);
+        border-color: var(--primary);
+        background: var(--primary-dim);
       }
       .sr-member-avatar {
         width: 40px; height: 40px; border-radius: 50%; overflow: hidden;
@@ -644,7 +644,7 @@
       }
       .sr-self-tag {
         font-size: 10px; padding: 2px 6px; border-radius: 999px;
-        background: rgba(124,58,237,0.15); color: var(--primary, #7c3aed);
+        background: var(--primary-dim); color: var(--primary);
         font-weight: 600;
       }
       .sr-member-last {
@@ -669,7 +669,7 @@
         background: var(--surface3, #e2e8f0); overflow: hidden;
       }
       .sr-progress-fill {
-        height: 100%; background: linear-gradient(90deg, var(--primary, #7c3aed), #a855f7);
+        height: 100%; background: var(--primary);
         transition: width 0.4s ease;
       }
       .sr-page-footer {

@@ -201,11 +201,11 @@
         width: auto;
         margin: 8px auto 4px;
         padding: 6px 14px;
-        background: rgba(124,58,237,0.08);
-        border: 1px solid rgba(124,58,237,0.18);
+        background: var(--primary-dim);
+        border: 1px solid var(--primary);
         border-radius: 999px;
         cursor: pointer;
-        color: var(--primary, #7c3aed);
+        color: var(--primary);
         transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
         flex-shrink: 0;
         font-family: inherit;
@@ -226,8 +226,8 @@
       }
       .recorder-grabber:hover,
       .recorder-grabber:focus-visible {
-        background: rgba(124,58,237,0.14);
-        border-color: rgba(124,58,237,0.35);
+        background: var(--primary-dim);
+        border-color: var(--primary);
         outline: none;
       }
       .recorder-grabber:active {
@@ -275,8 +275,8 @@
         border-color: #4ade80; color: #4ade80;
       }
       .rec-stt-stage--active .rec-stt-stage-dot {
-        background: rgba(124,77,255,0.15);
-        border-color: var(--primary, #7c4dff);
+        background: var(--primary-dim);
+        border-color: var(--primary);
         color: transparent;
       }
       .rec-stt-stage-dot--spinner::after {
@@ -284,7 +284,7 @@
         position: absolute;
         width: 14px; height: 14px;
         border: 2.5px solid transparent;
-        border-top-color: var(--primary, #7c4dff);
+        border-top-color: var(--primary);
         border-radius: 50%;
         animation: recSttSpin 0.8s linear infinite;
       }
@@ -296,7 +296,7 @@
         max-width: 72px; line-height: 1.3;
       }
       .rec-stt-stage--active .rec-stt-stage-label {
-        color: var(--primary, #7c4dff); font-weight: 600;
+        color: var(--primary); font-weight: 600;
       }
       .rec-stt-stage--done .rec-stt-stage-label { color: #4ade80; }
 
@@ -309,8 +309,8 @@
       }
       .rec-stt-close-note {
         font-size: 0.78rem;
-        color: var(--primary, #7c4dff);
-        background: rgba(124,77,255,0.10);
+        color: var(--primary);
+        background: var(--primary-dim);
         border-radius: 6px; padding: 0.4rem 0.75rem;
         margin: 0.5rem 0; text-align: center; line-height: 1.4;
       }
@@ -337,11 +337,11 @@
         border-radius: 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
       }
       .rec-engine-option--selected {
-        border-color: var(--primary, #7c4dff);
-        background: rgba(124,77,255,0.07);
+        border-color: var(--primary);
+        background: var(--primary-dim);
       }
       .rec-engine-option input[type="radio"] {
-        flex-shrink: 0; accent-color: var(--primary, #7c4dff); width: 16px; height: 16px; cursor: pointer;
+        flex-shrink: 0; accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer;
       }
       .rec-engine-option-title { font-weight: 600; font-size: 0.93rem; color: var(--text, #e2e2f2); }
       .rec-engine-option-desc  { font-size: 0.78rem; color: var(--text-muted, #8888aa); margin-top: 0.18rem; }

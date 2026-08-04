@@ -179,8 +179,8 @@ function showNotionReorderModal(notes) {
       <div class="db-modal-list" id="notionReorderList" style="overflow-y:auto;max-height:50vh;flex:1;"></div>
       <div class="db-modal-footer">
         <button onclick="this.closest('.db-modal-overlay').remove()" style="background:var(--surface3);color:var(--text);">취소</button>
-        <button id="notionReorderFileBtn" style="padding:0.5rem 1rem;border-radius:6px;border:none;background:#2563eb;color:#fff;font-size:0.85rem;cursor:pointer;white-space:nowrap;">📄 파일 저장</button>
-        <button id="notionReorderCopyBtn" style="padding:0.5rem 1rem;border-radius:6px;border:none;background:#7c3aed;color:#fff;font-size:0.85rem;cursor:pointer;white-space:nowrap;">📋 클립보드 복사</button>
+        <button id="notionReorderFileBtn" style="padding:0.5rem 1rem;border-radius:6px;border:none;background:var(--secondary);color:var(--bg);font-size:0.85rem;cursor:pointer;white-space:nowrap;">📄 파일 저장</button>
+        <button id="notionReorderCopyBtn" style="padding:0.5rem 1rem;border-radius:6px;border:none;background:var(--primary);color:var(--bg);font-size:0.85rem;cursor:pointer;white-space:nowrap;">📋 클립보드 복사</button>
       </div>
     </div>`;
 

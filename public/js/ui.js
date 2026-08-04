@@ -266,7 +266,7 @@ function appConfirm(message, opts = {}) {
         <div style="font-size:0.92rem; line-height:1.5; white-space:pre-line; margin-bottom:1.1rem; color:var(--text);">${escHtml(message)}</div>
         <div class="db-modal-footer" style="display:flex; justify-content:flex-end; gap:0.5rem;">
           <button class="appConfirmCancel" style="background:var(--surface3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">${escHtml(cancelText)}</button>
-          <button class="appConfirmOk" style="background:${danger ? '#e5484d' : 'var(--primary)'}; color:#fff; border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">${escHtml(okText)}</button>
+          <button class="appConfirmOk" style="background:${danger ? '#e5484d' : 'var(--primary)'}; color:${danger ? '#fff' : 'var(--bg)'}; border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">${escHtml(okText)}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -299,7 +299,7 @@ function appPrompt(message, defaultValue = '', opts = {}) {
         <input class="appPromptInput" type="text" style="width:100%; padding:0.5rem 0.7rem; border:1px solid var(--border); border-radius:6px; background:var(--surface2); color:var(--text); font-size:0.9rem; box-sizing:border-box; margin-bottom:1rem;" />
         <div class="db-modal-footer" style="display:flex; justify-content:flex-end; gap:0.5rem;">
           <button class="appPromptCancel" style="background:var(--surface3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">${escHtml(cancelText)}</button>
-          <button class="appPromptOk" style="background:var(--primary); color:#fff; border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">${escHtml(okText)}</button>
+          <button class="appPromptOk" style="background:var(--primary); color:var(--bg); border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">${escHtml(okText)}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);

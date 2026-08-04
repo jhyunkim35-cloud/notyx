@@ -155,7 +155,12 @@ const FOLDER_COLORS = [
 const REC_ORDINALS = ['1교시','2교시','3교시','4교시','5교시','6교시','7교시','8교시','9교시','10교시'];
 const QUIZ_CHOICES_PREFIX = ['①', '②', '③', '④', '⑤'];
 const CLASSIFY_LABELS = { theory: '이론', research: '연구', case: '사례', other: '기타' };
-const CLASSIFY_COLORS = { theory: '#7c3aed', research: '#0ea5e9', case: '#10b981', other: '#6b7280' };
+// Phase B: category badges are neutral now — CLASSIFY_LABELS ships the meaning
+// as a word next to every badge, so hue was never carrying information here.
+// (FOLDER_COLORS above stays chromatic: those are user-picked, persisted, and
+// whitelist-validated in firestore_sync.js — changing the values would fail
+// validation on folders users already coloured.)
+const CLASSIFY_COLORS = { theory: 'var(--text)', research: 'var(--text-muted)', case: 'var(--text-muted)', other: 'var(--text-dim)' };
 const DB_NAME    = 'meetingAppDB';
 const DB_VERSION = 4;
 

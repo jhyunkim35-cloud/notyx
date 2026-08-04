@@ -285,10 +285,10 @@
         </div>
 
         <footer class="exam-plan-footer">
-          <button id="examPlanDeleteBtn" class="action-btn danger" style="display:none;">시험 등록 해제</button>
+          <button id="examPlanDeleteBtn" class="ny-btn ny-btn-danger" style="display:none;">시험 등록 해제</button>
           <div style="flex:1"></div>
-          <button id="examPlanCancelBtn" class="action-btn">취소</button>
-          <button id="examPlanSaveBtn" class="action-btn primary">등록</button>
+          <button id="examPlanCancelBtn" class="ny-btn ny-btn-secondary">취소</button>
+          <button id="examPlanSaveBtn" class="ny-btn ny-btn-primary">등록</button>
         </footer>
       </div>
     `;

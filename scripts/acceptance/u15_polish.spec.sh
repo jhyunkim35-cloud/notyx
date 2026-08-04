@@ -30,4 +30,4 @@ assert_contains public/js/pptx_parser.js "file.name.toLowerCase().endsWith('.hei
 
 # ── 캐시버스트 ────────────────────────────────────────────
 assert_absent   public/index.html "?v=u12critic" "U15: 캐시버스트 이전 버전 마커 잔존 없음"
-assert_contains public/index.html "?v=u15polish" "U15: 캐시버스트 신규 버전 마커 적용"
+assert_contains public/index.html "?v=uibphaseb" "U15: 캐시버스트 신규 버전 마커 적용 (UI Phase B에서 전체 통일)"

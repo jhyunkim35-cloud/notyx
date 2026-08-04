@@ -117,7 +117,7 @@
           `<span style="font-size:12px;color:var(--text-muted,#94a3b8);">${i + 1} / ${steps.length}</span>` +
           `<span style="display:flex;gap:8px;">` +
             (isLast ? '' : `<button data-act="skip" style="background:transparent;border:none;color:var(--text-muted,#94a3b8);font:inherit;font-size:13px;cursor:pointer;padding:6px 8px;">건너뛰기</button>`) +
-            `<button data-act="next" style="background:var(--primary,#7c3aed);border:none;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:7px 16px;border-radius:8px;">${isLast ? '시작하기' : '다음'}</button>` +
+            `<button data-act="next" style="background:var(--primary);border:none;color:var(--bg);font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:7px 16px;border-radius:8px;">${isLast ? '시작하기' : '다음'}</button>` +
           `</span>` +
         `</div>`;
       tip.querySelector('[data-act="next"]').addEventListener('click', next);

@@ -23,7 +23,7 @@ async function promptNoteName(defaultTitle) {
         <select class="folder-save-select" style="width:100%; padding:0.4rem 0.6rem; border:1px solid var(--border); border-radius:6px; background:var(--surface2); color:var(--text); font-size:0.85rem; box-sizing:border-box;">${buildFolderSelectOptions(folders, '')}</select>
         <div class="db-modal-footer" style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
           <button class="appPromptCancel" style="background:var(--surface3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">취소</button>
-          <button class="appPromptOk" style="background:var(--primary); color:#fff; border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">확인</button>
+          <button class="appPromptOk" style="background:var(--primary); color:var(--bg); border:none; border-radius:6px; padding:0.4rem 1rem; cursor:pointer; font-size:0.85rem;">확인</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -509,7 +509,7 @@ function showImportNoteModal() {
       <div id="importPreviewArea" style="display:none;flex-direction:column;gap:0.4rem;overflow-y:auto;flex:1;min-height:0;"></div>
       <div class="db-modal-footer" style="justify-content:flex-end;flex-shrink:0;">
         <button onclick="this.closest('.db-modal-overlay').remove()" style="background:var(--surface3);color:var(--text);">취소</button>
-        <button id="importNoteSaveBtn" disabled style="padding:0.5rem 1.2rem;border-radius:6px;border:none;background:var(--primary);color:#fff;font-size:0.85rem;cursor:pointer;opacity:0.5;">저장</button>
+        <button id="importNoteSaveBtn" disabled style="padding:0.5rem 1.2rem;border-radius:6px;border:none;background:var(--primary);color:var(--bg);font-size:0.85rem;cursor:pointer;opacity:0.5;">저장</button>
       </div>
     </div>`;
 

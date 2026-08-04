@@ -148,7 +148,7 @@ async function showPaymentModal(context = 'quota_exceeded') {
           <div style="font-weight:700;font-size:1rem;">📝 1회 이용권 — ₩500</div>
           <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem;">이번 분석 1회만 결제</div>
         </button>
-        <button onclick="startPayment('monthly')" style="padding:1rem;border:2px solid var(--secondary);border-radius:12px;background:linear-gradient(135deg,rgba(124,77,255,0.08),rgba(0,180,216,0.08));color:var(--text);cursor:pointer;text-align:left;">
+        <button onclick="startPayment('monthly')" style="padding:1rem;border:2px solid var(--secondary);border-radius:12px;background:var(--primary-dim);color:var(--text);cursor:pointer;text-align:left;">
           <div style="font-weight:700;font-size:1rem;">🎓 월정액 — ₩7,900/월</div>
           <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem;">한 달간 무제한 이용</div>
         </button>
