@@ -18,6 +18,8 @@ function updateAuthUI() {
     userName.textContent = currentUser.displayName || currentUser.email;
     userAvatar.src = currentUser.photoURL || '';
     landingView.style.display = 'none';
+    // Landing is being hidden — stop the entrance motion here so ScrollTrigger instances don't leak across shell teardown/rebuild.
+    if (window.nyLandingMotion) window.nyLandingMotion.stop();
     sidebar.style.display = '';
     // Which view to show is decided by bootAppView()/switchView() in main.js,
     // gated on auth. Guessing here raced with it and flashed an empty home.
@@ -31,6 +33,8 @@ function updateAuthUI() {
     loginBtn.style.display = '';
     userInfo.style.display = 'none';
     landingView.style.display = '';
+    // Landing is actually becoming visible here — the only point where the entrance motion should start.
+    if (window.nyLandingMotion) window.nyLandingMotion.start();
     sidebar.style.display = 'none';
     homeView.style.display = 'none';
     newNoteView.style.display = 'none';

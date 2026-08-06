@@ -69,6 +69,17 @@
   --ny-radius-lg: 14px;
   --ny-radius-pill: 999px;
 
+  /* 랜딩 진입 모션 — #landingView 전용 (2026-08-06 결정 기록).
+     랜딩 밖은 여전히 모션 0이라 이 파일에는 transition/keyframe이 없다.
+     모션을 도는 주체가 GSAP 하나뿐이므로 --ny-motion-ease는 CSS 이징이 아니라
+     GSAP 이징 이름을 담는다. 소비자가 하나면 값도 하나여야 드리프트가 없다. */
+  --ny-motion-rise: 10px;
+  --ny-motion-dur: 200ms;
+  --ny-motion-stagger: 50ms;
+  --ny-motion-ease: power2.out;
+  --ny-motion-hl-dur: 420ms;
+  --ny-motion-hl-delay: 280ms;
+
   /* type family — already loaded by index.html, no new font added */
   --ny-font: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
     'Apple SD Gothic Neo', 'Segoe UI', system-ui, sans-serif;
@@ -578,6 +589,36 @@ mark.ny-hl {
   -webkit-box-decoration-break: clone;
 }
 
+/* 획을 긋는 모드 — JS가 「지금 그린다」고 결정했을 때만 붙인다.
+   붙이는 순간 mark 자신의 배경을 넘겨받은 .ny-hl-wash 가 대신 칠하고,
+   그걸 scaleX 로 왼쪽부터 늘린다. 그리기 전 상태(scaleX 0)가 마크업 기본값이
+   아니라 이 클래스 안에만 있는 이유가 그거다 — JS가 실패하면 애초에 안 붙는다.
+   셀렉터가 mark.ny-hl.ny-hl-draw 형태인 이유: 위 mark.ny-hl (0,1,1)을
+   특이도로 이겨야 하기 때문 — .ny-hl-draw 단독(0,1,0)이면 진다. */
+mark.ny-hl.ny-hl-draw,
+.ny-hl.ny-hl-draw {
+  position: relative;
+  z-index: 0;
+  background: transparent;
+}
+
+/* 실제 마커는 글자 왼쪽 조금 앞에서 시작해 오른쪽 끝을 넘겨 멈춘다.
+   좌우 오프셋이 비대칭인 게 그 오버슈트다. 선단이 완전한 직각이면
+   CSS 애니메이션으로 읽히므로 skewX 로 살짝 눕힌다 (gradient는 금지 게이트라 못 쓴다). */
+.ny-hl-wash {
+  position: absolute;
+  z-index: -1;
+  top: 0.04em;
+  right: -0.34em;
+  bottom: -0.06em;
+  left: -0.22em;
+  background: var(--ny-hl);
+  border-radius: 3px 7px 4px 6px / 6px 4px 7px 3px;
+  transform: skewX(-9deg) scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
 /* ============================================================================
    §3 Layout helpers
    ============================================================================ */
@@ -1028,4 +1069,24 @@ html.ny-logged-out #debugPanel {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ============================================================================
+   §12 prefers-reduced-motion — 협상 대상 아님 (2026-08-06 결정 기록)
+   ============================================================================
+   JS가 matchMedia로 이미 가드하므로 평소엔 이 블록이 할 일이 없다. 여기 있는
+   이유는 OS 설정이 세션 도중에 바뀌는 경우다 — 그때 이미 심어진 wash와 이미
+   숨겨진 요소가 그대로 멈춰 있으면 안 된다. GSAP은 인라인 스타일로 쓰므로
+   !important 가 필요하다.
+   ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  #landingView [data-state] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  /* 형광펜은 「안 그린 게 아니라 이미 그려져 있다」 */
+  .ny-hl-wash {
+    transform: skewX(-9deg) scaleX(1) !important;
+  }
 }

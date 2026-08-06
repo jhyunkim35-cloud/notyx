@@ -38,13 +38,13 @@ assert_contains public/js/recorder.js "audioBitsPerSecond: 32000" "U7-5: 32kbps 
 
 assert_contains vercel.json "api/whisper-stt.js" "U7-6: maxDuration 등록"
 assert_contains public/js/transcripts_view.js "발화자|참석자" "U7-7: 프리뷰 발화자 라벨 강조 렌더"
-assert_matches public/index.html "transcripts_view\.js\?v=uibphaseb" "U7-7: transcripts_view 캐시버스트 갱신 (현재값 정확 핀 — 얼터네이션 금지, 구값 허용은 회귀 감지력 상실)"
+assert_matches public/index.html "transcripts_view\.js\?v=motion1" "U7-7: transcripts_view 캐시버스트 갱신 (현재값 정확 핀 — 얼터네이션 금지, 구값 허용은 회귀 감지력 상실)"
 
 assert_live /api/whisper-stt "unauthorized" "U7-8: 라이브 함수 응답 (미인증 401 바디)"
 
 assert_contains api/whisper-stt.js "form.append('prompt'" "U7e-1: 용어 프롬프트 서버 전달 (Groq FormData)"
 assert_contains public/js/recorder.js "buildSttTermsPrompt" "U7e-2: 클라 강의자료 용어 추출 함수 존재"
-assert_matches public/index.html "recorder\.js\?v=uibphaseb" "U7e-3: recorder.js 캐시버스트 갱신 (현재값 정확 핀)"
+assert_matches public/index.html "recorder\.js\?v=motion1" "U7e-3: recorder.js 캐시버스트 갱신 (현재값 정확 핀)"
 
 assert_contains public/js/recorder.js 'id="recSpeakersHint"' "U7e-4: 발화자 수 힌트 셀렉트 존재 (기본 자동 감지)"
 assert_contains public/js/recorder.js "reqBody.speakers_hint = hintVal" "U7e-5: 힌트가 whisper 경로 body에만 포함"
