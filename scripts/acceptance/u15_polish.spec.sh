@@ -29,5 +29,5 @@ assert_contains public/js/pptx_parser.js "ponytail:" "U15-3: HEIC 우회 로직�
 assert_contains public/js/pptx_parser.js "file.name.toLowerCase().endsWith('.heic')" "U15-3: createImageBitmap 실패시 .heic 파일만 변환 재시도"
 
 # ── 캐시버스트 ────────────────────────────────────────────
-assert_absent   public/index.html "?v=uibphaseb" "U15: 캐시버스트 이전 버전 마커 잔존 없음"
-assert_contains public/index.html "?v=motion1" "U15: 캐시버스트 신규 버전 마커 적용 (랜딩 모션 라운드에서 전체 통일)"
+assert_absent   public/index.html "?v=motion1" "U15: 캐시버스트 이전 버전 마커 잔존 없음"
+assert_contains public/index.html "?v=storage1" "U15: 캐시버스트 신규 버전 마커 적용 (저장 구조 1단계 라운드에서 전체 통일)"

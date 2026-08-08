@@ -216,12 +216,27 @@ async function getAllNotesFS() {
 }
 async function deleteNoteFS(id) {
   _invalidateNotesCache();
+  // Read the audio pointer while the record still exists — deleteNote() below
+  // drops the local row and ref.doc(id).delete() drops the remote one.
+  let audioPath = null;
+  try {
+    const note = await getNote(id);
+    if (note) audioPath = note.audioStoragePath || null;
+  } catch (e) { /* best-effort */ }
   await deleteNote(id);
   const ref = userNotesRef();
   if (ref) {
+    if (!audioPath) {
+      // Local row can be absent (bulk delete of a note synced on another device).
+      try {
+        const snap = await ref.doc(id).get();
+        if (snap.exists) audioPath = (snap.data() || {}).audioStoragePath || null;
+      } catch (e) { /* best-effort */ }
+    }
     await ref.doc(id).delete();
     await deleteSlideImages(id);
   }
+  await deleteNoteAudio(audioPath);
   // Track deletion for sync
   if (currentUser) {
     const deletedKey = 'deleted_notes_' + currentUser.uid;
@@ -675,6 +690,26 @@ async function deleteSlideImages(noteId) {
     await Promise.all(list.items.map(item => item.delete()));
   } catch (e) {
     console.error('deleteSlideImages error:', e);
+  }
+}
+
+// 🔴2: recordings live at a flat users/{uid}/recordings/... path, which the
+// notes/{noteId}/ prefix sweep in deleteSlideImages() can never reach. The note
+// record carries the pointer, so cleanup has to route through audioStoragePath.
+//
+// Scope is deliberate: only the owner's own upload is removed. The group copy
+// made by api/group-create.js belongs to the lecture group, not to this note —
+// deleting a note must never destroy material other members depend on. The
+// prefix guard below is what enforces that.
+async function deleteNoteAudio(path) {
+  if (!currentUser || typeof path !== 'string' || !path) return;
+  if (!path.startsWith('users/' + currentUser.uid + '/recordings/')) return;
+  try {
+    await storage.ref(path).delete();
+  } catch (e) {
+    // deleteNoteAudio best-effort: an audio delete failure (already gone,
+    // offline, permission) must never block the note delete itself.
+    console.warn('deleteNoteAudio failed (best-effort):', e && e.message);
   }
 }
 

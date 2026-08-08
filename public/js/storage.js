@@ -1,30 +1,58 @@
 // IndexedDB layer. Pure local storage for notes, folders, quiz results.
 // Depends on: constants.js (DB_NAME, DB_VERSION, uuidv4, getNextSortOrder).
 
+// Migration ladder. Steps are keyed by the DB_VERSION they land on and run in
+// order for every version the installed DB is behind (e.oldVersion).
+//
+// Why this shape: the previous handler wrapped createIndex() inside
+// `if (!db.objectStoreNames.contains(store))`, so bumping DB_VERSION was a
+// silent no-op for anyone who already had the stores — new installs got the
+// index, existing users never did, and the schema forked permanently. Index
+// creation now goes through the live upgrade transaction instead, guarded by
+// indexNames so each step is idempotent on both paths.
+//
+// Never drop a store or an index here — that is data loss, not migration.
+function ensureStore(e, name) {
+  const db = e.target.result;
+  if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'id' });
+}
+function ensureIndex(e, name, indexName, keyPath) {
+  const store = e.target.transaction.objectStore(name);
+  if (!store.indexNames.contains(indexName)) store.createIndex(indexName, keyPath, { unique: false });
+}
+
+const IDB_MIGRATIONS = [
+  {
+    version: 5,
+    // Baseline + v5 in one idempotent step: create any missing store, then
+    // reconcile EVERY declared index. v1~v4 installs may be missing some (that
+    // is the defect above), and notes.updatedAt is new in v5 — getAllNotes()
+    // has always sorted by it. Running this on a fresh install and on a v4
+    // install must produce the identical schema.
+    run(e) {
+      ensureStore(e, 'notes');
+      ensureStore(e, 'folders');
+      ensureStore(e, 'quizResults');
+      ensureStore(e, 'srsCards');
+      ensureIndex(e, 'notes',       'folderId',       'folderId');
+      ensureIndex(e, 'notes',       'createdAt',      'createdAt');
+      ensureIndex(e, 'notes',       'title',          'title');
+      ensureIndex(e, 'notes',       'updatedAt',      'updatedAt');
+      ensureIndex(e, 'folders',     'name',           'name');
+      ensureIndex(e, 'quizResults', 'noteId',         'noteId');
+      ensureIndex(e, 'quizResults', 'timestamp',      'timestamp');
+      ensureIndex(e, 'srsCards',    'folderId',       'folderId');
+      ensureIndex(e, 'srsCards',    'nextReviewDate', 'nextReviewDate');
+    },
+  },
+];
+
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = e => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('notes')) {
-        const ns = db.createObjectStore('notes', { keyPath: 'id' });
-        ns.createIndex('folderId',   'folderId',   { unique: false });
-        ns.createIndex('createdAt',  'createdAt',  { unique: false });
-        ns.createIndex('title',      'title',      { unique: false });
-      }
-      if (!db.objectStoreNames.contains('folders')) {
-        const fs = db.createObjectStore('folders', { keyPath: 'id' });
-        fs.createIndex('name', 'name', { unique: false });
-      }
-      if (!db.objectStoreNames.contains('quizResults')) {
-        const qr = db.createObjectStore('quizResults', { keyPath: 'id' });
-        qr.createIndex('noteId',    'noteId',    { unique: false });
-        qr.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-      if (!db.objectStoreNames.contains('srsCards')) {
-        const sc = db.createObjectStore('srsCards', { keyPath: 'id' });
-        sc.createIndex('folderId',       'folderId',       { unique: false });
-        sc.createIndex('nextReviewDate', 'nextReviewDate', { unique: false });
+      for (const step of IDB_MIGRATIONS) {
+        if (e.oldVersion < step.version) step.run(e);
       }
     };
     req.onsuccess = e => resolve(e.target.result);

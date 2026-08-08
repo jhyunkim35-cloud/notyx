@@ -162,7 +162,7 @@ const CLASSIFY_LABELS = { theory: '이론', research: '연구', case: '사례', 
 // validation on folders users already coloured.)
 const CLASSIFY_COLORS = { theory: 'var(--text)', research: 'var(--text-muted)', case: 'var(--text-muted)', other: 'var(--text-dim)' };
 const DB_NAME    = 'meetingAppDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 const AGENT_META = {
   1: { icon: '📝', name: '노트 작성자' },
