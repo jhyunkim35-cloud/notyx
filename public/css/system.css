@@ -878,6 +878,54 @@ mark.ny-hl.ny-hl-draw,
   content: '· ';
   color: var(--ny-text-faint);
 }
+.ny-preview-lead {
+  font-size: var(--ny-text-body-size);
+  line-height: 1.7;
+  color: var(--ny-text);
+}
+.ny-preview-rule {
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--ny-border);
+}
+.ny-preview-note-sub {
+  font-size: var(--ny-text-body-size);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ny-text);
+}
+.ny-preview-sublist {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ny-space-1);
+  margin-top: var(--ny-space-1);
+  padding-inline-start: var(--ny-space-4);
+  font-size: var(--ny-text-caption-size);
+  color: var(--ny-text-muted);
+}
+/* 랜딩 미리보기는 정적이다 — 칩은 실제 노트와 같은 클래스로 모양만 재현하고
+   data-slide를 달지 않아 ui.js의 전역 위임 클릭이 발화하지 않는다. 손 모양
+   커서는 열리지 않는 오버레이를 약속하므로 여기서만 되돌린다. hover도
+   기본 배경(--primary-dim)으로 되돌려서 색이 바뀌는 것처럼 보이지 않게 한다. */
+#ny-preview .page-cite-chip {
+  cursor: default;
+}
+#ny-preview .page-cite-chip:hover {
+  background: var(--primary-dim);
+}
+.ny-preview-credit {
+  max-width: 56rem;
+  margin: var(--ny-space-3) auto 0;
+  font-size: var(--ny-text-caption-size);
+  color: var(--ny-text-muted);
+  text-align: center;
+}
+.ny-preview-credit a {
+  color: inherit;
+  text-decoration: underline;
+}
 
 /* -- content blocks ---------------------------------------------------------- */
 
