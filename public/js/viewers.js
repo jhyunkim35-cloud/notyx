@@ -263,6 +263,10 @@ function initSlideListClickHandler() {
 function switchSplitTab(tab) {
   const _sqArea = document.getElementById('quizInlineArea');
   if (_sqArea && _sqArea._quizApi) _sqArea._quizApi.savePartialIfEligible();
+  // Logged-out demo: quiz / classify / ask are the LLM round trip itself.
+  // Let the tab activate normally, then answer with a login CTA instead of
+  // firing a request — classify in particular fires on click alone.
+  const _demoBlocked = window.nyDemoActive && (tab === 'quiz' || tab === 'classify' || tab === 'ask');
   // Quiz/classify tabs: only activate if notes are available
   if ((tab === 'quiz' || tab === 'classify') && !storedNotesText) return;
 
@@ -300,6 +304,8 @@ function switchSplitTab(tab) {
   classifyEl.style.display   = tab === 'classify'   ? 'flex'  : 'none';
   if (askEl) askEl.style.display = tab === 'ask' ? 'flex' : 'none';
 
+  if (_demoBlocked) { renderDemoLoginCta(tab); return; }
+
   if (tab === 'transcript' && !transcriptEl.innerHTML.trim()) {
     if (storedHighlightedTranscript) {
       transcriptEl.innerHTML = `<div class="transcript-content">${storedHighlightedTranscript}</div>`;
@@ -329,19 +335,19 @@ function switchSplitTab(tab) {
   }
 
   // Launch quiz settings when switching to quiz tab (only if area is empty)
-  if (tab === 'quiz' && !quizAreaEl.innerHTML.trim()) {
+  if (!_demoBlocked && tab === 'quiz' && !quizAreaEl.innerHTML.trim()) {
     launchQuiz();
   }
 
   // Round 6: render or refresh the ask panel when it becomes active.
   // Don't rebuild if user has an in-progress draft (input value would be lost),
   // unless a new selection-based context just arrived.
-  if (tab === 'ask' && askEl && (!askEl.innerHTML.trim() || askEl._pendingContext)) {
+  if (!_demoBlocked && tab === 'ask' && askEl && (!askEl.innerHTML.trim() || askEl._pendingContext)) {
     renderAskPanel();
   }
 
   // Classify tab: use cache or fetch from API
-  if (tab === 'classify') {
+  if (!_demoBlocked && tab === 'classify') {
     const noteId = currentNoteId;
     // Invalidate cache when a different note is active
     if (_classifyCache && _classifyCache.noteId !== noteId) {

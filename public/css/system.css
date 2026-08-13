@@ -554,6 +554,40 @@ a.ny-btn {
   color: var(--ny-text);
 }
 
+/* ── ny-demo-cta (로그아웃 데모의 퀴즈/분류/질문 로그인 유도) ───────────── */
+
+.ny-demo-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ny-space-2);
+  max-width: var(--ny-measure);
+  margin-inline: auto;
+  padding-top: var(--ny-space-7);
+  text-align: center;
+}
+.ny-demo-cta p {
+  margin: 0;
+  color: var(--ny-text-muted);
+  line-height: 1.7;
+}
+.ny-demo-cta p:last-of-type {
+  font-size: var(--ny-text-caption-size);
+  color: var(--ny-text-faint);
+}
+
+/* ── ny-demo-credit (데모 뷰어 안 CC BY 4.0 표기) ────────────────────────── */
+
+.ny-demo-credit {
+  margin: 0 0 var(--ny-space-3);
+  font-size: var(--ny-text-caption-size);
+  color: var(--ny-text-muted);
+}
+.ny-demo-credit a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .ny-dropzone {
   display: flex;
   flex-direction: column;
@@ -914,6 +948,17 @@ mark.ny-hl.ny-hl-draw,
 }
 #ny-preview .page-cite-chip:hover {
   background: var(--primary-dim);
+}
+.ny-preview-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ny-space-2);
+  margin-top: var(--ny-space-5);
+}
+.ny-preview-cta-note {
+  font-size: var(--ny-text-caption-size);
+  color: var(--ny-text-muted);
 }
 .ny-preview-credit {
   max-width: 56rem;

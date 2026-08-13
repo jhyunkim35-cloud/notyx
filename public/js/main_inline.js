@@ -323,7 +323,10 @@ document.getElementById('shareGroupBtn')?.addEventListener('click', async () => 
   });
 });
 
-splitViewBtn.addEventListener('click', async () => {
+// Named so the logged-out demo can open the same viewer directly:
+// #splitViewBtn is disabled+hidden after switchView('new') (ui.js), and a
+// disabled button fires no click, so a synthetic click cannot reach this.
+async function openSplitViewer() {
   const splitViewer = document.getElementById('splitViewer');
   const splitSlides = document.getElementById('splitSlides');
   const splitNotes  = document.getElementById('splitNotes');
@@ -410,12 +413,20 @@ splitViewBtn.addEventListener('click', async () => {
   }
   initAskFeature();
   closeSidebar();
+  // #debugToggle is hidden by CSS when logged out; this one is not, and
+  // copyDebugReport (ui.js) dumps pipeline internals.
+  const _dbgBtn = document.getElementById('splitDebugBtn');
+  if (_dbgBtn && (typeof currentUser === 'undefined' || !currentUser)) _dbgBtn.style.display = 'none';
   splitViewer.style.display = 'flex';
   document.body.style.overflow = 'hidden';
   debugLog('UI', 'Split viewer opened');
-});
+}
+splitViewBtn.addEventListener('click', openSplitViewer);
 
 document.getElementById('splitCloseBtn').addEventListener('click', () => {
+  // Logged-out demo: the viewer IS the whole experience, so closing must not
+  // fall through to switchView('home') and uncover the app shell.
+  if (window.nyDemoActive) { closeNotyxDemo(); return; }
   const _sqArea = document.getElementById('quizInlineArea');
   if (_sqArea && _sqArea._quizApi) _sqArea._quizApi.savePartialIfEligible();
   document.getElementById('splitViewer').style.display = 'none';

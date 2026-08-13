@@ -41,12 +41,22 @@ assert_contains "$LP_REGION" 'p.1-3'                                "LP-2e: 범�
 assert_contains "$LP_REGION" '<strong>광합성 Photosynthesis</strong>' "LP-2f: 용어 = 「한글 English」 굵게"
 assert_contains "$LP_REGION" 'ex) 식물'                             "LP-2g: 용어 아래 중첩 목록"
 
-# 랜딩은 정적이다. 클릭 핸들러 없는 <button>은 접근성 거짓말이므로 칩은
+# 포스터는 정적이다. 클릭 핸들러 없는 <button>은 접근성 거짓말이므로 칩은
 # 비대화형 요소로 모양만 재현한다. 게다가 ui.js의 문서 전역 위임 리스너가
 # `.page-cite-chip`을 물고 있어서, data-slide를 달면 랜딩에서 슬라이드
 # 오버레이가 열리려다 실패한다 — 속성을 안 다는 것이 그 경로를 차단한다.
-assert_absent "$LP_REGION" '<button'    "LP-2h: 미리보기에 <button> 없음 (정적 화면 = 비대화형 칩)"
+#
+# 2026-08-08(P2): 이 불변식의 대상은 **섹션이 아니라 포스터**다. 같은 섹션에
+# 「실제로 열어보기」 CTA(#nyDemoOpenBtn)가 생겼는데, 그건 진짜 핸들러가 달린
+# 진짜 버튼이라 LP-2h가 막으려던 거짓말이 아니다. 그래서 그 한 줄만 빼고 검사한다
+# — 제외 대상이 실재함을 먼저 못박아야 제외가 공짜 통과가 되지 않는다.
+assert_contains "$LP_REGION" 'id="nyDemoOpenBtn"' "LP-2h0: 제외 대상(데모 CTA)이 실재 (아래 제외의 짝)"
+LP_POSTER="$(mktemp)"
+grep -v 'id="nyDemoOpenBtn"' "$LP_REGION" > "$LP_POSTER"
+assert_contains "$LP_POSTER" 'ny-preview-body' "LP-2h1: 제외 후에도 포스터 본문 생존 (absent 단언의 짝)"
+assert_absent "$LP_POSTER" '<button'    "LP-2h: 포스터에 <button> 없음 (정적 화면 = 비대화형 칩)"
 assert_absent "$LP_REGION" 'data-slide' "LP-2i: 랜딩 칩에 data-slide 없음 (ui.js 전역 클릭 위임 미발화)"
+rm -f "$LP_POSTER"
 
 # ── ③ CC BY 4.0 출처 표시 (의무) ─────────────────────────
 assert_contains "$LP_REGION" 'OpenStax, Biology (CC BY 4.0)' "LP-3a: CC BY 출처 표시 존재"
@@ -79,6 +89,6 @@ assert_contains "$LP_HTML"            'id="finalNotesBody"'                "LP-5
 # 같은 단언이 두 벌이 된다. 이 스펙이 더할 게 있는 건 **CSS 링크**뿐이다:
 # 지금까지 캐시버스트를 핀하던 스펙은 전부 JS 파일이었고, 이번 라운드는 처음으로
 # system.css가 바뀐다. 현재값 정확 핀 — 얼터네이션은 회귀 감지력이 0이다.
-assert_contains "$LP_HTML" 'system.css?v=preview1' "LP-6: system.css 캐시버스트 갱신 (CSS가 바뀐 라운드)"
+assert_contains "$LP_HTML" 'system.css?v=demo1' "LP-6: system.css 캐시버스트 갱신 (CSS가 바뀐 라운드)"
 
 rm -f "$LP_REGION"
