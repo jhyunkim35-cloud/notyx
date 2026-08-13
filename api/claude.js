@@ -2,18 +2,6 @@ const fetch = globalThis.fetch || require('node-fetch');
 const { getAdmin } = require('./_firebase-admin');
 const { recordUsage } = require('./_usage');
 
-// Decode JWT payload without verification — for usage observability only.
-// A spoofed uid would pollute that uid's stats, not bypass billing (which
-// verifies the token cryptographically). Acceptable for non-billable calls.
-function quickDecodeUid(idToken) {
-  try {
-    const parts = (idToken || '').split('.');
-    if (parts.length !== 3) return null;
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-    return payload.user_id || payload.sub || null;
-  } catch { return null; }
-}
-
 // Extract token counts from accumulated SSE text.
 // message_start carries input/cache counts; message_delta carries output count.
 function parseTokensFromSse(sseText) {
@@ -178,28 +166,51 @@ module.exports = async (req, res) => {
   const xff = req.headers['x-forwarded-for'] || '';
   const ip = xff.split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
 
-  // P1-4: distributed rate limit. Verify the token here (best-effort) so we
-  // can key on uid; fall back to IP for tokenless/invalid requests. Both the
-  // admin init and the verify are wrapped so a failure here never blocks the
-  // request — the rate limit is a guard, not a gate. (noteAnalysis verifies
-  // the token again inside the B1 block; that second verify is a cheap local
-  // signature check once the certs are cached.)
+  // ─────────────────────────────────────────────────────────────────
+  // P1: authentication gate.
+  //
+  // Every feature this proxy serves — noteAnalysis, quiz, classify, ask,
+  // essayGrade, vision — spends money on a paid upstream API. Until now only
+  // noteAnalysis verified the caller: the rest reached Anthropic with no
+  // identity at all, so anyone who sent an allowed Origin header could burn
+  // our key from curl (ALLOWED_ORIGINS only constrains browsers).
+  //
+  // The verify happens once, here, and its uid feeds the rate limit, the B1
+  // billing block and usage accounting below — three verifies collapse into
+  // one. Signature checks are local once Google's certs are cached.
+  //
+  // Fail-closed on admin init failure: an unauthenticated open door on a
+  // paid endpoint is a worse outage than a 503. Init failure is a config
+  // problem (missing/unparseable FIREBASE_SERVICE_ACCOUNT), not a transient
+  // Firebase hiccup, so failing open here would not buy availability — it
+  // would only buy anonymous spend.
+  // ─────────────────────────────────────────────────────────────────
+  let admin;
   try {
-    const rlAdmin = getAdmin();
-    let rlUid = null;
-    try {
-      const d = await rlAdmin.auth().verifyIdToken(req.body?.idToken);
-      rlUid = d.uid;
-    } catch { rlUid = null; }
-    const rlKey = rlUid ? `u_${rlUid}` : `ip_${ip}`;
-    const allowed = await checkRateLimitDistributed(rlAdmin, rlKey);
-    if (!allowed) {
-      res.setHeader('Retry-After', '30');
-      return res.status(429).json({ error: { type: 'rate_limited', message: '요청이 너무 많아요. 잠시 후 다시 시도해주세요.' } });
-    }
+    admin = getAdmin();
   } catch (e) {
-    // Admin unavailable — skip the rate limit rather than block traffic.
-    console.error('[rateLimit] skipped (admin init failed):', e.message);
+    console.error('[auth] admin init failed — refusing request:', e.message);
+    res.setHeader('Retry-After', '30');
+    return res.status(503).json({ error: { type: 'auth_unavailable', message: '인증 서버에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' } });
+  }
+
+  let authUid;
+  try {
+    const decoded = await admin.auth().verifyIdToken(req.body?.idToken);
+    authUid = decoded.uid;
+  } catch (e) {
+    console.warn(`[auth] rejected — feature=${req.body?.feature || 'unknown'} ip=${ip}: ${e.message}`);
+    return res.status(401).json({ error: { type: 'unauthorized', message: '로그인이 필요합니다. 다시 로그인 후 시도해주세요.' } });
+  }
+
+  // P1-4: distributed rate limit, keyed on the verified uid so it follows the
+  // user across IPs and cannot be reset by rotating a forged token. The old
+  // `ip_<ip>` fallback existed only for tokenless requests, which no longer
+  // reach this line.
+  const rateAllowed = await checkRateLimitDistributed(admin, `u_${authUid}`);
+  if (!rateAllowed) {
+    res.setHeader('Retry-After', '30');
+    return res.status(429).json({ error: { type: 'rate_limited', message: '요청이 너무 많아요. 잠시 후 다시 시도해주세요.' } });
   }
 
   const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -264,23 +275,8 @@ module.exports = async (req, res) => {
 
   if (isBillable && analysisId) {
     // New path: analysisId-driven idempotent billing.
-    let admin;
-    try {
-      admin = getAdmin();
-    } catch (e) {
-      console.error('[B1] admin init failed:', e.message);
-      return res.status(500).json({ error: { type: 'admin_init_failed', message: '서버 설정 오류입니다.' } });
-    }
-
-    // Verify token before touching Firestore — checkQuota does this too,
-    // but we need uid first to build the session ref.
-    let decoded;
-    try {
-      decoded = await admin.auth().verifyIdToken(req.body?.idToken);
-    } catch (e) {
-      return res.status(403).json({ error: { type: 'invalid_token', message: '인증이 필요합니다. 다시 로그인 후 시도해주세요.' } });
-    }
-    const uid = decoded.uid;
+    // Token already verified by the P1 gate above; reuse that uid.
+    const uid = authUid;
 
     // Sanity-check the analysisId shape before using it as a doc id —
     // keep it tight to Firestore-safe characters and a sane length so a
@@ -340,9 +336,8 @@ module.exports = async (req, res) => {
 
   req._billCtx = billCtx;
 
-  // Resolve uid for usage tracking. Billable path already verified the token;
-  // for non-billable features we decode without full verification (observability only).
-  const uidForUsage = (billCtx?.uid) || quickDecodeUid(req.body?.idToken);
+  // Always a verified uid now — the P1 gate rejects anything else.
+  const uidForUsage = billCtx?.uid || authUid;
   const usageKind = feature === 'noteAnalysis' ? 'note'
     : feature === 'quiz' ? 'quiz'
     : (feature === 'classify' || feature === 'grade') ? 'classify'
