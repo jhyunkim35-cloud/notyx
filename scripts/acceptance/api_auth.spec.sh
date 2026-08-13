@@ -8,7 +8,9 @@
 #
 # 이 스펙이 지키는 것:
 #   ① 모든 요청이 **검증된** idToken 을 요구한다 (feature 분기 없는 단일 게이트)
-#   ② 토큰 없음/무효 → 401, admin 장애 → 503 (fail-closed, G3 보고 대상)
+#   ② 토큰 없음/무효 → 403, admin 장애 → 503 (fail-closed — 준현 승인)
+#      403인 이유: api.js:85·188 이 401 을 「API 키가 유효하지 않습니다」로 오역해서,
+#      토큰이 만료됐을 뿐인 로그인 사용자가 자기 API 키를 의심하게 된다.
 #   ③ 미검증 신원 잔재 0 — `ip_` 폴백·`quickDecodeUid`·레이트리밋 스킵 전부 제거
 #   ④ 클라이언트 6개 feature 호출부가 여전히 idToken 을 실어 보낸다
 #
@@ -32,8 +34,9 @@ assert_contains "$AUTH_API" 'let authUid'             "AUTH-1b: 검증된 uid �
 assert_contains "$AUTH_API" 'authUid = decoded.uid'   "AUTH-1c: uid 가 verifyIdToken 결과에서만 나옴"
 
 # ── ② 거부 응답 ─────────────────────────────────────────────
-assert_contains "$AUTH_API" "res.status(401)"          "AUTH-2a: 토큰 없음/무효 → 401"
-assert_contains "$AUTH_API" "type: 'unauthorized'"     "AUTH-2b: 401 에러 타입 명시"
+assert_contains "$AUTH_API" "res.status(403)"          "AUTH-2a: 토큰 없음/무효 → 403 (401은 api.js가 「API 키」 오류로 오역한다)"
+assert_absent "$AUTH_API" 'res.status(401)'            "AUTH-2a2: 401 잔재 없음 (api.js:85·188이 401을 API 키 오류로 오역)"
+assert_contains "$AUTH_API" "type: 'unauthorized'"     "AUTH-2b: 거부 에러 타입 명시"
 assert_contains "$AUTH_API" '[auth] rejected'          "AUTH-2c: 거부 로그 마커 (남용 관측용)"
 assert_contains "$AUTH_API" "res.status(503)"          "AUTH-2d: admin 초기화 실패 → 503 (fail-closed)"
 assert_contains "$AUTH_API" "type: 'auth_unavailable'" "AUTH-2e: 503 에러 타입 명시"
@@ -47,7 +50,7 @@ assert_contains    "$AUTH_API" 'u_${authUid}'                          "AUTH-3c:
 assert_repo_absent 'quickDecodeUid' "AUTH-3d: 미검증 JWT 디코더 전면 제거 (검증된 uid 로 대체)"
 
 # ── ④ 클라이언트 6개 feature 호출부 회귀 가드 ───────────────
-# 게이트가 서 있어도 클라이언트가 토큰을 안 실으면 로그인 사용자가 401 을 맞는다.
+# 게이트가 서 있어도 클라이언트가 토큰을 안 실으면 로그인 사용자가 403 을 맞는다.
 assert_contains public/js/api.js           'idToken = await firebase.auth().currentUser?.getIdToken()' "AUTH-4a: noteAnalysis(non-stream) 토큰 첨부"
 assert_contains public/js/api.js           "feature: meta.feature || 'unknown'"                        "AUTH-4b: noteAnalysis feature 전달"
 assert_contains public/js/quiz.js          "feature: 'quiz'"                                           "AUTH-4c: quiz 호출부 생존"

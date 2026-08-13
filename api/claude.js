@@ -200,7 +200,10 @@ module.exports = async (req, res) => {
     authUid = decoded.uid;
   } catch (e) {
     console.warn(`[auth] rejected — feature=${req.body?.feature || 'unknown'} ip=${ip}: ${e.message}`);
-    return res.status(401).json({ error: { type: 'unauthorized', message: '로그인이 필요합니다. 다시 로그인 후 시도해주세요.' } });
+    // 403, not 401: api.js maps 401 to "API 키가 유효하지 않습니다", which would
+    // tell a user with a merely-expired token to go check their own API key.
+    // 403 falls through to err.error.message and shows the real reason.
+    return res.status(403).json({ error: { type: 'unauthorized', message: '로그인이 필요합니다. 다시 로그인 후 시도해주세요.' } });
   }
 
   // P1-4: distributed rate limit, keyed on the verified uid so it follows the
