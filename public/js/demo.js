@@ -100,7 +100,10 @@ function renderDemoLoginCta(tab) {
   btn.className = 'ny-btn ny-btn-primary';
   btn.type = 'button';
   btn.textContent = 'Google로 로그인하고 사용하기';
-  btn.onclick = loginWithGoogle;
+  btn.onclick = async () => {
+    const user = await loginWithGoogle();
+    if (user) closeNotyxDemo();
+  };
 
   wrap.append(p1, p2, btn);
 

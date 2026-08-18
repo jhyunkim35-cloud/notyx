@@ -22,6 +22,17 @@ LD_VIEW=public/js/viewers.js
 LD_DEMO=public/js/demo.js
 LD_JSON=public/demo/demo.json
 
+# ── ⓪b 인증 전환 행동 검증 ─────────────────────────────────
+# Execute the real auth/demo scripts with a minimal Node DOM boundary. This
+# catches the bug where a successful popup login leaves the live demo active.
+assert_file scripts/test_demo_auth_transition.js "LD-0f: 데모 인증 전환 행동 테스트 존재"
+LD_AUTH_OUT="$(node scripts/test_demo_auth_transition.js 2>&1)"
+if [ "$?" -eq 0 ]; then
+  _pass "LD-0g: 성공/취소 인증 전환 행동 테스트 통과"
+else
+  _fail "LD-0g: 성공/취소 인증 전환 행동 테스트 실패 (${LD_AUTH_OUT//$'\n'/ })"
+fi
+
 # ── ⓪ 대상 생존 못박기 ──────────────────────────────────────
 assert_file     "$LD_HTML" "LD-0a: index.html 존재"
 assert_contains "$LD_HTML" 'id="splitViewer"'        "LD-0b: 분할 뷰어 마크업 생존"

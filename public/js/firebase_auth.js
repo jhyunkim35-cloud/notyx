@@ -46,19 +46,21 @@ function updateAuthUI() {
 async function loginWithGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
-    await auth.signInWithPopup(provider);
+    const result = await auth.signInWithPopup(provider);
+    return result.user;
   } catch (e) {
     // popup-closed-by-user / cancelled-popup-request are normal user actions
     // (they dismissed the chooser, or a rapid second click superseded the
     // first), so stay silent. Anything else is a real failure we want to
     // diagnose — log the auth error code and report to Sentry so intermittent
     // popup/cookie failures leave a trace instead of vanishing without a clue.
-    if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+    if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return null;
     console.error('[loginWithGoogle] sign-in failed:', e.code, e.message);
     if (typeof Sentry !== 'undefined' && Sentry.captureException) {
       Sentry.captureException(e, { tags: { area: 'auth-login', authCode: e.code } });
     }
     showToast('❌ 로그인 실패: ' + e.message);
+    return null;
   }
 }
 

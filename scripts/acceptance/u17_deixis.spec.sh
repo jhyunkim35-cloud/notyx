@@ -65,7 +65,7 @@ if [ -n "$_u17_d_line" ] && [ -n "$_u17_p_line" ] && [ "$_u17_d_line" -lt "$_u17
 else
   _fail "U17-7a: index.html이 deixis.js를 pipeline.js보다 먼저 로드  (deixis@${_u17_d_line:-없음}, pipeline@${_u17_p_line:-없음})"
 fi
-assert_contains public/index.html "deixis.js?v=demo1" "U17-7b: 캐시버스트 마커 적용 (랜딩 미리보기 라운드에서 전체 통일)"
+assert_contains public/index.html "deixis.js?v=demoauth1" "U17-7b: 캐시버스트 마커 적용 (랜딩 미리보기 라운드에서 전체 통일)"
 
 # ── 9) u17fix 라운드 — 확정 결함 픽스 회귀 가드 ─────────────
 assert_contains public/js/deixis.js "function _extractJsonArray(" "U17-9a: 문자열 인지 브래킷 매칭 추출기 존재 (프리앰블/포스트앰블/잘림 내성)"
