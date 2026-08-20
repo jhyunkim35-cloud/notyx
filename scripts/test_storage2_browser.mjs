@@ -158,7 +158,7 @@ try {
     dbVersion: typeof DB_VERSION === 'number' ? DB_VERSION : null,
   }));
   assert.equal(runtime.productionConstantsLoaded, true, 'fixture must execute public/js/constants.js');
-    assert.deepEqual(runtime.scriptOrder, ['fixture-helpers', 'constants', 'note_images', 'storage', 'firestore_sync'],
+    assert.deepEqual(runtime.scriptOrder, ['fixture-helpers', 'constants', 'note_images', 'markdown', 'storage', 'firestore_sync'],
     'fixture scripts must load production constants before Task 1 and storage');
   assert.equal(runtime.dbName, 'meetingAppDB', 'fixture must use the production DB name');
 
@@ -287,6 +287,7 @@ try {
         index: 0,
         mimeType: 'image/png',
         sourceKey: 'imageBase64',
+        _sourceSignature: 'data:image/png:iVBORw0KGgo=',
         markerId: 'note-image-0',
         blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
       }],
@@ -301,6 +302,7 @@ try {
           index: 0,
           mimeType: 'image/png',
           sourceKey: 'imageBase64',
+          _sourceSignature: 'data:image/png:iVBORw0KGgo=',
           markerId: 'note-image-0',
           blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
         },
@@ -311,6 +313,7 @@ try {
           index: 0,
           mimeType: 'image/jpeg',
           sourceKey: 'imageBase64',
+          _sourceSignature: 'data:image/jpeg:/9j/',
           markerId: 'note-image-1',
           blob: { type: 'image/jpeg', size: 3, bytes: [255, 216, 255] },
         },
@@ -319,6 +322,7 @@ try {
           index: 0,
           mimeType: 'image/png',
           sourceKey: 'imageBase64',
+          _sourceSignature: 'data:image/png:iVBORw0KGgo=',
           markerId: 'note-image-2',
           blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
         },
@@ -385,11 +389,41 @@ try {
     're-saving hydrated HTML must not grow duplicate HTML owners');
 
   await page.evaluate(() => saveNote({
+    id: 'task4-marker-collision',
+    title: 'Task 4 marker collision',
+    notesText: 'Original HTML owner.',
+    notesHtml: '<img src="data:image/png;base64,iVBORw0KGgo=" data-note-image-ref="note-image-0">',
+  }));
+  await page.evaluate(async () => {
+    const hydrated = await getNote('task4-marker-collision');
+    hydrated.notesText = 'Original HTML plus extracted owner.';
+    hydrated.extractedImages = [{
+      slideNumber: 1,
+      imageBase64: 'data:image/jpeg;base64,/9j/',
+      mimeType: 'image/jpeg',
+    }];
+    hydrated.notesHtml += '<img src="data:image/jpeg;base64,/9j/" data-note-image-ref="note-image-0">';
+    await saveNote(hydrated);
+  });
+  const collisionRecord = await page.evaluate(() => window.__storage2ReadImageRecord('task4-marker-collision'));
+  assert.deepEqual(collisionRecord.images.map(image => [image.field, image.markerId, image._sourceSignature]), [
+    ['html', 'note-image-0', 'data:image/png:iVBORw0KGgo='],
+    ['extractedImages', 'note-image-1', 'data:image/jpeg:/9j/'],
+  ], 'marker collision keeps the old HTML owner and allocates a new extracted marker');
+  const collisionOpen = await page.evaluate(() => getNote('task4-marker-collision'));
+  assert.match(collisionOpen.notesHtml, /data:image\/png;base64,iVBORw0KGgo=/);
+  assert.match(collisionOpen.notesHtml, /data:image\/jpeg;base64,\/9j\//);
+  await page.evaluate(async () => saveNote(await getNote('task4-marker-collision')));
+  const collisionRepeatedRecord = await page.evaluate(() => window.__storage2ReadImageRecord('task4-marker-collision'));
+  assert.equal(collisionRepeatedRecord.images.length, 2,
+    'marker collision ownership must not grow on a repeated hydrated save');
+
+  await page.evaluate(() => saveNote({
     id: 'task4-subset',
     title: 'Task 4 sparse subset',
     notesText: 'Sparse subset image ownership.',
     extractedImages: [, , { slideNumber: 3, imageBase64: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' }],
-    notesHtml: '<img src="data:image/png;base64,iVBORw0KGgo=" data-note-image-ref="note-image-2">',
+    notesHtml: '<p>stale local prose</p><img src="data:image/png;base64,iVBORw0KGgo=" data-note-image-ref="note-image-2">',
   }));
   const subsetLightweight = await page.evaluate(async () => {
     const note = (await getAllNotes()).find(candidate => candidate.id === 'task4-subset');
@@ -437,10 +471,20 @@ try {
   const authenticatedReconciled = await page.evaluate(() => getNoteFS('task4-subset'));
   assert.equal(authenticatedReconciled.title, 'Firestore title',
     'authenticated open must use Firestore metadata truth');
+  assert.match(authenticatedReconciled.notesHtml, /Firestore metadata text/,
+    'authenticated open must render newer Firestore notesText');
+  assert.doesNotMatch(authenticatedReconciled.notesHtml, /stale local prose/,
+    'authenticated open must not retain stale local prose');
   assert.equal(2 in authenticatedReconciled.extractedImages, true,
     'authenticated open must retain the local detached sparse owner');
   assert.match(authenticatedReconciled.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/,
     'authenticated open must restore local image sources');
+  const authenticatedRepeated = await page.evaluate(() => getNoteFS('task4-subset'));
+  assert.match(authenticatedRepeated.notesHtml, /Firestore metadata text/,
+    'repeated authenticated open remains on the remote content version');
+  assert.doesNotMatch(authenticatedRepeated.notesHtml, /stale local prose/);
+  assert.equal((await page.evaluate(() => window.__storage2ReadImageRecord('task4-subset'))).images.length, 1,
+    'remote reconciliation must not delete or duplicate detached ownership');
   await page.evaluate(() => { currentUser = null; delete db.collection; });
 
   const degradedRemoteCases = await page.evaluate(async () => {

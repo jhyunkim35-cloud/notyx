@@ -202,6 +202,35 @@ async function run() {
     'hydrated updates preserve ownership markers and indexes',
   );
 
+  const collisionOld = detachNoteImages({
+    id: 'marker-collision',
+    notesHtml: `<p>old owner</p><img src="${PNG_DATA_URL}" data-note-image-ref="note-image-0">`,
+  });
+  const collisionNew = detachNoteImages({
+    id: 'marker-collision',
+    notesHtml: `<p>old owner</p><img src="${PNG_DATA_URL}" data-note-image-ref="note-image-0">`
+      + `<img src="${JPEG_DATA_URL}" data-note-image-ref="note-image-0">`,
+    extractedImages: [{ slideNumber: 1, imageBase64: JPEG_DATA_URL, mimeType: 'image/jpeg' }],
+    slideImages: [{ slideNumber: 1, imageBase64: PNG_DATA_URL, mimeType: 'image/png' }],
+  }, collisionOld.imageRecord);
+  const collisionOwners = collisionNew.imageRecord.images;
+  assert.equal(collisionOwners.filter(image => image.field === 'html').length, 1,
+    'the original HTML owner must remain distinct from the new array owner');
+  assert.equal(collisionOwners.filter(image => image.field === 'extractedImages').length, 1);
+  assert.equal(collisionOwners.filter(image => image.field === 'slideImages').length, 1);
+  assert.equal(new Set(collisionOwners.map(image => image.markerId)).size, collisionOwners.length,
+    'different payloads must never share a marker');
+  assert.equal(collisionOwners.find(image => image.field === 'html').markerId, 'note-image-0',
+    'the original HTML owner keeps marker zero');
+  const collisionHydrated = await hydrateNoteImages(collisionNew.note, collisionNew.imageRecord);
+  assert.match(collisionHydrated.notesHtml, /data:image\/png;base64,iVBORw0KGgo=/,
+    'the original HTML payload survives a marker collision');
+  assert.match(collisionHydrated.notesHtml, /data:image\/jpeg;base64,\/9j\//,
+    'the new extracted payload survives a marker collision');
+  const collisionRepeated = detachNoteImages(collisionHydrated, collisionNew.imageRecord);
+  assert.equal(collisionRepeated.imageRecord.images.length, collisionNew.imageRecord.images.length,
+    'marker collision ownership must not grow on hydrated repeat saves');
+
   const sharedOwner = detachNoteImages({
     id: 'shared-owner',
     extractedImages: [{ slideNumber: 1, imageBase64: PNG_BASE64, mimeType: 'image/png', fileName: 'shared.png' }],

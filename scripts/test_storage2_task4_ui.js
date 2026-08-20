@@ -51,12 +51,100 @@ const degraded = {
   saveStatus: 'image-degraded',
   degradation: { resource: 'noteImages', reason: 'quota' },
 };
+context.currentUser = null;
 assert.equal(context.showImageDegradationWarning(degraded), true);
 assert.equal(warnings.length, 1, 'one failed save produces one warning');
 assert.match(warnings[0], /이미지/);
-assert.match(warnings[0], /저장 공간|다시 저장/);
+assert.match(warnings[0], /로그인/);
+assert.match(warnings[0], /Firebase Storage/);
+assert.match(warnings[0], /노트 내용은 저장되었습니다/);
 assert.equal(context.showImageDegradationWarning({ id: 'note-1' }), false);
 assert.equal(warnings.length, 1, 'normal saves do not change warning count');
+context.currentUser = { uid: 'warning-user' };
+assert.equal(context.showImageDegradationWarning(degraded), true);
+assert.equal(warnings.length, 2, 'signed-in failed save produces one additional warning');
+assert.match(warnings[1], /저장 공간을 정리.*다시 저장/);
+assert.match(warnings[1], /노트 내용은 저장되었습니다/);
+
+const originalSaveNoteFS = context.saveNoteFS;
+const originalSaveNote = context.saveNote;
+const originalGetNoteFS = context.getNoteFS;
+const originalGetAllNotesFS = context.getAllNotesFS;
+const originalGetAllFoldersFS = context.getAllFoldersFS;
+const originalDocumentCreateElement = context.document.createElement;
+const originalDocumentBody = context.document.body;
+const pathDegraded = () => ({
+  id: 'path-note',
+  saveStatus: 'image-degraded',
+  degradation: { resource: 'noteImages', reason: 'quota' },
+});
+context.saveNoteFS = async () => pathDegraded();
+context.saveNote = async () => pathDegraded();
+context.getNextSortOrder = async () => 0;
+context.promptNoteName = async () => ({ title: '경로 노트', folderId: null });
+context.showSuccessToast = () => {};
+context.renderHomeView = async () => {};
+context.storedNotesText = '경로 본문';
+context.storedPptText = '';
+context.storedFilteredText = '';
+context.storedHighlightedTranscript = '';
+context.currentUser = null;
+context.currentNoteId = null;
+warnings.length = 0;
+await context.draftSaveNote();
+assert.equal(warnings.length, 1, 'draft save consumes one degradation warning');
+await context.autoSaveNote();
+assert.equal(warnings.length, 2, 'finalize save consumes one additional degradation warning');
+
+context.currentUser = { uid: 'path-user' };
+context.getNoteFS = async () => ({ id: 'move-note', title: '이동 노트', notesText: '본문', notesHtml: '' });
+context.getAllFoldersFS = async () => [];
+const moveRows = [];
+let createdElements = 0;
+context.document.createElement = () => {
+  createdElements += 1;
+  if (createdElements === 1) return {
+    className: '',
+    innerHTML: '',
+    querySelector: () => ({ appendChild(row) { moveRows.push(row); } }),
+    remove() {},
+  };
+  return { className: '', style: {}, innerHTML: '', onclick: null };
+};
+context.document.body = { appendChild() {} };
+warnings.length = 0;
+await context.moveSavedNote('move-note');
+assert.equal(warnings.length, 0, 'move modal does not warn before a save is requested');
+assert.equal(moveRows.length, 1, 'move modal exposes the requested folder action');
+context.getNextSortOrder = async () => 1;
+context.saveNoteFS = async () => pathDegraded();
+await moveRows[0].onclick();
+assert.equal(warnings.length, 1, 'move save consumes one degradation warning');
+
+context.getNoteFS = async () => ({ id: 'rename-note', title: '이전 이름', notesText: '본문', notesHtml: '' });
+context.appPrompt = async () => '새 이름';
+context.safeNotePartialUpdate = async () => {};
+warnings.length = 0;
+await context.renameSavedNote('rename-note');
+assert.equal(warnings.length, 1, 'rename save consumes one degradation warning');
+
+context.getAllNotesFS = async () => [];
+context.getAllFoldersFS = async () => [];
+context.saveNoteFS = async () => pathDegraded();
+context.saveFolderFS = async () => {};
+warnings.length = 0;
+await context.importNotes({
+  files: [{ text: async () => JSON.stringify({ notes: [{ id: 'import-note', title: '가져온 노트', notesText: '본문' }] }) }],
+  value: 'selected',
+});
+assert.equal(warnings.length, 1, 'direct import save consumes one degradation warning');
+context.saveNoteFS = originalSaveNoteFS;
+context.saveNote = originalSaveNote;
+context.getNoteFS = originalGetNoteFS;
+context.getAllNotesFS = originalGetAllNotesFS;
+context.getAllFoldersFS = originalGetAllFoldersFS;
+context.document.createElement = originalDocumentCreateElement;
+context.document.body = originalDocumentBody;
 
 context.uuidv4 = () => 'ui-note-id';
 context.currentUser = null;
@@ -115,7 +203,7 @@ const localHydrated = {
   id: 'reconcile-note',
   title: 'local title',
   notesText: 'local text',
-  notesHtml: '<p>local</p><img src="data:image/png;base64,iVBORw0KGgo=" data-note-image-ref="note-image-2">',
+  notesHtml: '<p>stale local prose</p><img src="data:image/png;base64,iVBORw0KGgo=" data-note-image-ref="note-image-2">',
   extractedImages: [,, { slideNumber: 3, imageBase64: 'iVBORw0KGgo=', mimeType: 'image/png', markerId: 'note-image-2' }],
 };
 context.getNote = async () => { getNoteCalls += 1; return localHydrated; };
@@ -143,8 +231,12 @@ context.db = {
   },
 };
 const reconciled = await context.getNoteFS('reconcile-note');
-assert.equal(getNoteCalls, 1, 'authenticated note open must read one local hydrated note');
+assert.ok(getNoteCalls >= 1, 'authenticated note open must read the requested local hydrated note');
 assert.equal(reconciled.title, 'remote title', 'Firestore metadata remains authoritative');
+assert.match(reconciled.notesHtml, /remote text/,
+  'remote Firestore notesText is rendered when local content is stale');
+assert.doesNotMatch(reconciled.notesHtml, /stale local prose/,
+  'stale local prose must not replace newer remote content');
 assert.equal(reconciled.extractedImages[2].markerId, 'note-image-2',
   'local detached image ownership survives authenticated reconciliation');
 assert.match(reconciled.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/);

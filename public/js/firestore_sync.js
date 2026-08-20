@@ -156,6 +156,32 @@ function _hydrateNoteForViewer(note) {
   return note;
 }
 
+function _markerImageNodes(html) {
+  const nodes = {};
+  String(html || '').replace(/<img\b[^>]*data-note-image-ref\s*=\s*(?:(['"])([^'"]+)\1|([^\s>]+))[^>]*>/gi,
+    (whole, quote, quoted, bare) => {
+      const marker = quoted !== undefined ? quoted : bare;
+      if (!nodes[marker]) nodes[marker] = whole;
+      return whole;
+    });
+  return nodes;
+}
+
+function _mergeMarkerImageNodes(remoteHtml, localHtml) {
+  let merged = String(remoteHtml || '');
+  const localNodes = _markerImageNodes(localHtml);
+  for (const [marker, node] of Object.entries(localNodes)) {
+    const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const markerPattern = new RegExp(
+      '<img\\b(?=[^>]*data-note-image-ref\\s*=\\s*(?:["\\\'])' + escapedMarker + '(?:["\\\']))[^>]*>',
+      'i',
+    );
+    if (markerPattern.test(merged)) merged = merged.replace(markerPattern, node);
+    else merged += (merged ? '\n' : '') + node;
+  }
+  return merged;
+}
+
 async function getNoteFS(id) {
   // Logged-out path: just hit IDB
   const ref = userNotesRef();
@@ -169,18 +195,29 @@ async function getNoteFS(id) {
       const remoteHasDetachedArrays = Object.prototype.hasOwnProperty.call(rawData, 'extractedImages')
         || Object.prototype.hasOwnProperty.call(rawData, 'slideImages');
       const metadata = Object.assign({}, data, { id });
-      if (local && !remoteHasDetachedArrays) {
-        delete metadata.extractedImages;
-        delete metadata.slideImages;
-        // The local one-note read has marker-resolved HTML and is the only
-        // safe source for detached image ownership.
-        if (typeof local.notesHtml === 'string') metadata.notesHtml = local.notesHtml;
+      if (local) {
+        if (!remoteHasDetachedArrays) {
+          delete metadata.extractedImages;
+          delete metadata.slideImages;
+        }
+        const contentMatches = Object.prototype.hasOwnProperty.call(rawData, 'notesText')
+          && local.notesText === rawData.notesText;
+        if (contentMatches && typeof local.notesHtml === 'string') {
+          // The local one-note read has marker-resolved HTML and is safe to
+          // reuse only when it represents the same remote text version.
+          metadata.notesHtml = local.notesHtml;
+        } else {
+          // Firestore notesText is authoritative for changed content. Carry
+          // only detached marker-bearing image nodes from local HTML; never
+          // carry stale local prose into the remote version.
+          metadata.notesHtml = _mergeMarkerImageNodes(metadata.notesHtml, local.notesHtml);
+        }
       }
       try {
         await saveNote(metadata);
       } catch (e) { /* metadata mirror is best-effort; local data remains usable */ }
-      if (local) return Object.assign({}, local, metadata);
-      return getNote(id).catch(() => data);
+      const hydrated = await getNote(id).catch(() => null);
+      return hydrated ? Object.assign({}, hydrated, metadata) : data;
     }
     // Doc doesn't exist on Firestore — fall back to IDB so notes the user
     // is actively editing locally (not yet pushed) still open.

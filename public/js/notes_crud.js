@@ -94,7 +94,10 @@ function showImageDegradationWarning(saveResult) {
   if (!result || result.saveStatus !== 'image-degraded'
       || result.degradation?.resource !== 'noteImages'
       || result.degradation?.reason !== 'quota') return false;
-  showToast('⚠️ 이미지 저장이 완료되지 않았습니다. 노트 내용은 저장되었습니다. 저장 공간을 정리한 뒤 다시 저장해 주세요.');
+  const guidance = currentUser
+    ? '저장 공간을 정리한 뒤 다시 저장해 주세요.'
+    : '로그인하면 이미지를 Firebase Storage로 옮길 수 있습니다.';
+  showToast(`⚠️ 이미지 저장이 완료되지 않았습니다. 노트 내용은 저장되었습니다. ${guidance}`);
   return true;
 }
 

@@ -288,6 +288,27 @@ function noteImageRecordEntry(entry, field, index, sourceInfo) {
   return metadata;
 }
 
+function noteImageMarkerIsStable(markerId) {
+  return typeof markerId === 'string' && /^note-image-\d+$/.test(markerId);
+}
+
+function noteImageAllocateMarker(entries, preferredMarker, sourceSignature) {
+  var preferred = noteImageMarkerIsStable(preferredMarker) ? preferredMarker : '';
+  if (preferred) {
+    var conflicts = entries.filter(function (entry) { return entry.markerId === preferred; });
+    if (!conflicts.length || conflicts.every(function (entry) {
+      return entry._sourceSignature === sourceSignature;
+    })) return preferred;
+  }
+  var next = 0;
+  var candidate;
+  do {
+    candidate = 'note-image-' + next;
+    next += 1;
+  } while (entries.some(function (entry) { return entry.markerId === candidate; }));
+  return candidate;
+}
+
 function noteImageCollection(note, field, workingEntries) {
   var value = note[field];
   if (!Array.isArray(value)) return [];
@@ -302,7 +323,11 @@ function noteImageCollection(note, field, workingEntries) {
     var sourceInfo = noteImageSourceInfo(entry);
     if (sourceInfo && sourceInfo.kind === 'local') {
       var recordEntry = noteImageRecordEntry(entry, field, index, sourceInfo);
-      if (!recordEntry.markerId) recordEntry.markerId = noteImageDefaultMarker(field, index);
+      recordEntry.markerId = noteImageAllocateMarker(
+        workingEntries,
+        recordEntry.markerId || noteImageDefaultMarker(field, index),
+        sourceInfo.signature,
+      );
       workingEntries.push(recordEntry);
       output[index] = noteImageLocalMetadataEntry(entry);
       if (recordEntry.markerId) output[index].markerId = recordEntry.markerId;
@@ -331,23 +356,34 @@ function noteImageReplaceHtmlSources(html, workingEntries) {
     }
     var markerMatch = /\bdata-note-image-ref\s*=\s*(?:(["])([^"]+)\1|([^\s>]+))/i.exec(attrs);
     var requestedMarker = markerMatch ? (markerMatch[2] !== undefined ? markerMatch[2] : markerMatch[3]) : '';
-    var arrayOwner = requestedMarker && workingEntries.find(function (entry) {
-      return entry.field !== 'html' && entry.markerId === requestedMarker;
+    var htmlOwnerAtMarker = requestedMarker && workingEntries.find(function (entry) {
+      return entry.field === 'html'
+        && entry.markerId === requestedMarker
+        && entry._sourceSignature === sourceInfo.signature;
     });
+    var arrayOwner = workingEntries.find(function (entry) {
+      return entry.field !== 'html'
+        && entry._sourceSignature === sourceInfo.signature
+        && requestedMarker === entry.markerId;
+    }) || (!htmlOwnerAtMarker && requestedMarker && workingEntries.find(function (entry) {
+      return entry.field !== 'html' && entry._sourceSignature === sourceInfo.signature;
+    }));
     if (arrayOwner) {
-      // The gallery marker points at the array owner. Remove an older HTML
-      // alias with the same marker so hydrated saves cannot grow duplicates.
       for (var ownerIndex = workingEntries.length - 1; ownerIndex >= 0; ownerIndex -= 1) {
         if (workingEntries[ownerIndex].field === 'html'
-            && workingEntries[ownerIndex].markerId === requestedMarker) {
+            && workingEntries[ownerIndex].markerId === arrayOwner.markerId
+            && workingEntries[ownerIndex]._sourceSignature === sourceInfo.signature) {
           workingEntries.splice(ownerIndex, 1);
         }
       }
       var sharedAttrs = attrs.replace(/\s*src\s*=\s*(?:(['"])[^'"]*\1|[^\s>]+)/i, '');
-      return '<img' + sharedAttrs + ' src="" data-note-image-ref="' + requestedMarker + '">';
+      sharedAttrs = sharedAttrs.replace(/\s*data-note-image-ref\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i, '');
+      return '<img' + sharedAttrs + ' src="" data-note-image-ref="' + arrayOwner.markerId + '">';
     }
     var existingHtml = requestedMarker && workingEntries.find(function (entry) {
-      return entry.field === 'html' && entry.markerId === requestedMarker;
+      return entry.field === 'html'
+        && entry.markerId === requestedMarker
+        && entry._sourceSignature === sourceInfo.signature;
     });
     if (existingHtml) {
       var replacement = noteImageRecordEntry({}, 'html', htmlIndex, sourceInfo);
@@ -359,13 +395,12 @@ function noteImageReplaceHtmlSources(html, workingEntries) {
       return '<img' + existingAttrs + ' src="" data-note-image-ref="' + requestedMarker + '">';
     }
     var existing = noteImageRecordEntry({}, 'html', htmlIndex, sourceInfo);
-    if (requestedMarker) existing.markerId = requestedMarker;
+    existing.markerId = noteImageAllocateMarker(workingEntries, requestedMarker, sourceInfo.signature);
     workingEntries.push(existing);
     htmlIndex += 1;
-    var token = '__NOTE_IMAGE_REF_' + workingEntries.indexOf(existing) + '__';
     var cleanAttrs = attrs.replace(/\sdata-note-image-ref\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i, '');
     cleanAttrs = cleanAttrs.replace(/\s*src\s*=\s*(?:(["'])[^"']*\1|[^\s>]+)/i, '');
-    return '<img' + cleanAttrs + ' src="" data-note-image-ref="' + token + '">';
+    return '<img' + cleanAttrs + ' src="" data-note-image-ref="' + existing.markerId + '">';
   });
 }
 
@@ -383,7 +418,7 @@ function noteImageKeepReferencedHtmlEntries(html, entries) {
 function noteImageFinaliseRecord(entries, noteId) {
   var usedMarkers = {};
   entries.forEach(function (entry) {
-    if (typeof entry.markerId === 'string' && /^note-image-\d+$/.test(entry.markerId) && !usedMarkers[entry.markerId]) {
+    if (noteImageMarkerIsStable(entry.markerId) && !usedMarkers[entry.markerId]) {
       usedMarkers[entry.markerId] = true;
     } else {
       delete entry.markerId;
@@ -402,11 +437,7 @@ function noteImageFinaliseRecord(entries, noteId) {
   });
   return {
     noteId: noteId,
-    images: entries.map(function (entry) {
-      var copy = noteImageClone(entry);
-      delete copy._sourceSignature;
-      return copy;
-    }),
+    images: entries.map(function (entry) { return noteImageClone(entry); }),
   };
 }
 
