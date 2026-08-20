@@ -13,14 +13,19 @@ fi
 
 _storage2_run_node() {
   local label="$1"
-  shift
+  local success_marker="$2"
+  shift 2
   local output status
   output=$("$@" 2>&1)
   status=$?
-  if [ "$status" -eq 0 ]; then
-    _pass "$label"
-  else
+  if [ "$status" -ne 0 ]; then
     _fail "$label (exit $status: $(printf '%s' "$output" | tail -3 | tr '\n' ' '))"
+  elif ! printf '%s' "$output" | grep -Fq -- "$success_marker"; then
+    _fail "$label (missing success marker: '$success_marker')"
+  elif printf '%s' "$output" | grep -Eiq '(^|[^A-Za-z])(skip|skipped|skipping)([^A-Za-z]|$)'; then
+    _fail "$label (skip/skipped/skipping output is not accepted)"
+  else
+    _pass "$label"
   fi
 }
 
@@ -61,18 +66,32 @@ _storage2_region_absent() {
   fi
 }
 
+_storage2_region_count() {
+  local region="$1"
+  local pattern="$2"
+  local expected="$3"
+  local label="$4"
+  local count
+  count=$(printf '%s\n' "$region" | grep -Fo -- "$pattern" | wc -l | tr -d '[:space:]')
+  if [ "$count" -eq "$expected" ]; then
+    _pass "$label"
+  else
+    _fail "$label  (expected $expected, found $count: '$pattern' in selected source region)"
+  fi
+}
+
 # ── 1) Deterministic suites and the real browser gate ──────────────────────
 assert_file scripts/test_note_images.js "STORAGE2-1a: image contract test exists"
-_storage2_run_node "STORAGE2-1a: image contract test passed" node scripts/test_note_images.js
+_storage2_run_node "STORAGE2-1a: image contract test passed" "note images: 8 checks passed" node scripts/test_note_images.js
 
 assert_file scripts/test_storage2_task4_ui.js "STORAGE2-1b: UI contract test exists"
-_storage2_run_node "STORAGE2-1b: UI contract test passed" node scripts/test_storage2_task4_ui.js
+_storage2_run_node "STORAGE2-1b: UI contract test passed" "STORAGE2 Task 4 UI: GREEN contract checks passed" node scripts/test_storage2_task4_ui.js
 
 assert_file scripts/test_storage2_sync.js "STORAGE2-1c: sync contract test exists"
-_storage2_run_node "STORAGE2-1c: sync contract test passed" node scripts/test_storage2_sync.js
+_storage2_run_node "STORAGE2-1c: sync contract test passed" "STORAGE2 sync: PASS" node scripts/test_storage2_sync.js
 
 assert_file scripts/test_storage2_lifecycle.js "STORAGE2-1d: lifecycle contract test exists"
-_storage2_run_node "STORAGE2-1d: lifecycle contract test passed" node scripts/test_storage2_lifecycle.js
+_storage2_run_node "STORAGE2-1d: lifecycle contract test passed" "STORAGE2 lifecycle: PASS" node scripts/test_storage2_lifecycle.js
 
 assert_file scripts/test_storage2_browser.mjs "STORAGE2-1e: Chromium test exists"
 assert_file 'C:/Users/김준현/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs' "STORAGE2-1e: Playwright runtime exists"
@@ -91,28 +110,47 @@ _storage2_region_contains "$_storage2_migration" "notes.openCursor()" "STORAGE2-
 _storage2_region_absent "$_storage2_migration" "getAll(" "STORAGE2-2g: v6 migration region does not call getAll()"
 
 # ── 3) Transaction and read-shape invariants ───────────────────────────────
-assert_contains public/js/storage.js "db.transaction(['notes', 'noteImages'], 'readwrite')" "STORAGE2-3a: note save/delete use a notes+noteImages transaction"
-assert_contains public/js/storage.js "db.transaction(['notes', 'folders', 'noteImages'], 'readwrite')" "STORAGE2-3b: storage reset includes noteImages transactionally"
-assert_contains public/js/storage.js "tx.objectStore('noteImages').delete(id)" "STORAGE2-3c: note deletion removes its detached image record"
-assert_contains public/js/storage.js "tx.objectStore('noteImages').clear()" "STORAGE2-3d: storage reset clears detached image records"
+_storage2_save_transaction="$(sed -n '/^function saveNoteTransaction/,/^function saveNoteLightweightAfterQuota/p' public/js/storage.js)"
+_storage2_region_count "$_storage2_save_transaction" "db.transaction(['notes', 'noteImages'], 'readwrite')" 1 "STORAGE2-3a: saveNoteTransaction has one notes+noteImages readwrite transaction"
+_storage2_region_contains "$_storage2_save_transaction" "detachNoteImages(" "STORAGE2-3b: saveNoteTransaction detaches image payloads"
+_storage2_region_contains "$_storage2_save_transaction" "noteImages.put(detached.imageRecord)" "STORAGE2-3c: saveNoteTransaction writes noteImages"
+_storage2_region_contains "$_storage2_save_transaction" "noteImages.delete(mergedRecord.id)" "STORAGE2-3d: saveNoteTransaction deletes noteImages on empty intent"
+_storage2_region_contains "$_storage2_save_transaction" "notes.put(lightweightRecord)" "STORAGE2-3e: saveNoteTransaction writes the lightweight note"
+
+_storage2_delete_note="$(sed -n '/^async function deleteNote(id)/,/^async function searchNotes/p' public/js/storage.js)"
+_storage2_region_count "$_storage2_delete_note" "db.transaction(['notes', 'noteImages'], 'readwrite')" 1 "STORAGE2-3f: deleteNote has one notes+noteImages readwrite transaction"
+_storage2_region_contains "$_storage2_delete_note" "tx.objectStore('notes').delete(id)" "STORAGE2-3g: deleteNote removes the note inside its transaction"
+_storage2_region_contains "$_storage2_delete_note" "tx.objectStore('noteImages').delete(id)" "STORAGE2-3h: deleteNote removes detached images inside its transaction"
+
+_storage2_clear_all="$(sed -n '/^async function clearAllStorage()/,$p' public/js/storage.js)"
+_storage2_region_count "$_storage2_clear_all" "db.transaction(['notes', 'folders', 'noteImages'], 'readwrite')" 1 "STORAGE2-3i: clearAllStorage has one notes+folders+noteImages readwrite transaction"
+_storage2_region_contains "$_storage2_clear_all" "tx.objectStore('notes').clear()" "STORAGE2-3j: clearAllStorage clears notes inside its transaction"
+_storage2_region_contains "$_storage2_clear_all" "tx.objectStore('folders').clear()" "STORAGE2-3k: clearAllStorage clears folders inside its transaction"
+_storage2_region_contains "$_storage2_clear_all" "tx.objectStore('noteImages').clear()" "STORAGE2-3l: clearAllStorage clears detached images inside its transaction"
 
 _storage2_list="$(sed -n '/^async function getAllNotes()/,/^async function updateNoteOrder/p' public/js/storage.js)"
-_storage2_region_contains "$_storage2_list" "objectStore('notes').getAll()" "STORAGE2-3e: list reads use the notes store"
-_storage2_region_contains "$_storage2_list" "stripNoteImagePayloads(note)" "STORAGE2-3f: list reads strip image payloads"
-_storage2_region_absent "$_storage2_list" "noteImages" "STORAGE2-3g: list reads never open noteImages"
+_storage2_region_contains "$_storage2_list" "objectStore('notes').getAll()" "STORAGE2-3m: list reads use the notes store"
+_storage2_region_contains "$_storage2_list" "stripNoteImagePayloads(note)" "STORAGE2-3n: list reads strip image payloads"
+_storage2_region_absent "$_storage2_list" "noteImages" "STORAGE2-3o: list reads never open noteImages"
 
 _storage2_one_note="$(sed -n '/^async function getNote(id)/,/^async function getAllNotes/p' public/js/storage.js)"
-_storage2_region_contains "$_storage2_one_note" "objectStore('noteImages').get(id)" "STORAGE2-3h: one-note reads fetch only the requested image record"
-_storage2_region_contains "$_storage2_one_note" "hydrateNoteImages(note, imageRecord)" "STORAGE2-3i: one-note reads hydrate in memory"
-_storage2_region_absent "$_storage2_one_note" "getAll(" "STORAGE2-3j: one-note reads do not bulk-hydrate images"
+_storage2_region_contains "$_storage2_one_note" "objectStore('noteImages').get(id)" "STORAGE2-3p: one-note reads fetch only the requested image record"
+_storage2_region_contains "$_storage2_one_note" "hydrateNoteImages(note, imageRecord)" "STORAGE2-3q: one-note reads hydrate in memory"
+_storage2_region_absent "$_storage2_one_note" "getAll(" "STORAGE2-3r: one-note reads do not bulk-hydrate images"
 
 # ── 4) Local/Firestore payload stripping ───────────────────────────────────
 assert_contains public/js/note_images.js "function stripNoteImagePayloads(note)" "STORAGE2-4a: shared local payload stripper exists"
-assert_contains public/js/firestore_sync.js "function stripFirestoreNotePayloads(note)" "STORAGE2-4b: Firestore payload stripper exists"
-assert_contains public/js/firestore_sync.js "delete lightweight.notesHtml" "STORAGE2-4c: Firestore writes remove notesHtml payloads"
-assert_contains public/js/firestore_sync.js "delete lightweight.extractedImages" "STORAGE2-4d: Firestore writes remove extractedImages payloads"
-assert_contains public/js/firestore_sync.js "delete lightweight.slideImages" "STORAGE2-4e: Firestore writes remove slideImages payloads"
-assert_contains public/js/firestore_sync.js "stripFirestoreNotePayloads(note)" "STORAGE2-4f: Firestore note writes pass through the stripper"
+_storage2_firestore_strip="$(sed -n '/^function stripFirestoreNotePayloads/,/^async function writeFirestoreNote/p' public/js/firestore_sync.js)"
+_storage2_region_contains "$_storage2_firestore_strip" "function stripFirestoreNotePayloads(note)" "STORAGE2-4b: Firestore payload stripper region exists"
+_storage2_region_contains "$_storage2_firestore_strip" "delete lightweight.notesHtml" "STORAGE2-4c: Firestore stripper removes notesHtml payloads"
+_storage2_region_contains "$_storage2_firestore_strip" "delete lightweight.extractedImages" "STORAGE2-4d: Firestore stripper removes extractedImages payloads"
+_storage2_region_contains "$_storage2_firestore_strip" "delete lightweight.slideImages" "STORAGE2-4e: Firestore stripper removes slideImages payloads"
+
+_storage2_firestore_write="$(sed -n '/^async function writeFirestoreNote/,/^async function updateFirestoreNote/p' public/js/firestore_sync.js)"
+_storage2_region_contains "$_storage2_firestore_write" "stripFirestoreNotePayloads(note)" "STORAGE2-4f: writeFirestoreNote calls the payload stripper"
+
+_storage2_firestore_update="$(sed -n '/^async function updateFirestoreNote/,/^function _syncImageSource/p' public/js/firestore_sync.js)"
+_storage2_region_contains "$_storage2_firestore_update" "stripFirestoreNotePayloads(partial)" "STORAGE2-4g: updateFirestoreNote calls the payload stripper"
 
 # This is intentionally a Task 7 gate: the prior storage-growth pin must move
 # with the production schema, while all other STORAGE1 checks remain intact.
