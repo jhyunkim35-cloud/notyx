@@ -388,6 +388,53 @@ async function run() {
   assert.equal(raceRemote.data().customMetadata.owner, 'new');
   assert.equal(raceRemote.data().customMetadata.retained, true);
 
+  let releaseOldLocalWrite;
+  let oldLocalWriteStarted;
+  const localQueueWrites = [];
+  const localQueueFirestore = makeFirestore(context, localQueueWrites);
+  const oldLocalGate = new Promise(resolve => { releaseOldLocalWrite = resolve; });
+  oldLocalWriteStarted = new Promise(resolve => { context.__oldLocalWriteStarted = resolve; });
+  let localQueueSaveNumber = 0;
+  let localQueueCurrent = null;
+  context.saveNote = async note => {
+    const saveNumber = ++localQueueSaveNumber;
+    const result = Object.assign({}, note, { updatedAt: `local-queue-save-${saveNumber}` });
+    if (saveNumber === 1) {
+      context.__oldLocalWriteStarted();
+      await oldLocalGate;
+    }
+    localQueueCurrent = result;
+    localSaves.push(result);
+    return result;
+  };
+  context.getNote = async () => (localQueueCurrent ? Object.assign({}, localQueueCurrent) : null);
+  const staleLocalQueueResult = context.saveNoteFS({
+    id: 'local-queue-note',
+    title: 'Old title',
+    notesText: 'Old text',
+    customMetadata: { owner: 'old' },
+  });
+  await oldLocalWriteStarted;
+  const newerLocalQueueResultPromise = context.saveNoteFS({
+    id: 'local-queue-note',
+    title: 'New title',
+    notesText: 'New text',
+    customMetadata: { owner: 'new', retained: true },
+  });
+  releaseOldLocalWrite();
+  const newerLocalQueueResult = await newerLocalQueueResultPromise;
+  const staleLocalQueueResultResolved = await staleLocalQueueResult;
+  assert.equal(localQueueCurrent.notesText, 'New text', 'queued newer local write is final');
+  assert.equal(localQueueCurrent.title, 'New title');
+  assert.deepEqual(localQueueCurrent.customMetadata, { owner: 'new', retained: true });
+  const localQueueRemote = await localQueueFirestore.noteRef.doc('local-queue-note').get();
+  assert.equal(localQueueRemote.data().notesText, 'New text', 'queued newer remote text is final');
+  assert.equal(localQueueWrites.filter(write => write.method === 'set').length, 1,
+    'stale generation does not add an older remote write');
+  assert.equal(newerLocalQueueResult.notesText, 'New text', 'newer save result remains newer');
+  assert.equal(staleLocalQueueResultResolved.notesText, 'New text',
+    'stale save result reflects the final newer local state');
+
   const failedUploads = [];
   context.storage = makeStorage(failedUploads, true);
   localSaves.length = 0;

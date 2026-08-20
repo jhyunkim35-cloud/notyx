@@ -190,6 +190,7 @@ async function _syncReadCurrentNote(id) {
 }
 
 const _noteSyncGenerations = new Map();
+const _noteLocalWriteQueues = new Map();
 const _noteRemoteCompletionQueues = new Map();
 
 function _beginNoteSyncGeneration(noteId) {
@@ -202,11 +203,38 @@ function _isCurrentNoteSyncGeneration(noteId, generation) {
   return _noteSyncGenerations.get(noteId) === generation;
 }
 
+function _enqueueNoteLocalWrite(noteId, generation, record) {
+  const previous = _noteLocalWriteQueues.get(noteId) || Promise.resolve();
+  const completion = previous.catch(() => {}).then(async () => {
+    if (!_isCurrentNoteSyncGeneration(noteId, generation)) {
+      return { stale: true, note: await _syncReadCurrentNote(noteId) };
+    }
+    return { stale: false, result: await saveNote(record) };
+  });
+  _noteLocalWriteQueues.set(noteId, completion);
+  completion.then(
+    () => { if (_noteLocalWriteQueues.get(noteId) === completion) _noteLocalWriteQueues.delete(noteId); },
+    () => { if (_noteLocalWriteQueues.get(noteId) === completion) _noteLocalWriteQueues.delete(noteId); },
+  );
+  return completion;
+}
+
+async function _readAfterLatestLocalWrite(noteId) {
+  let observed;
+  do {
+    observed = _noteLocalWriteQueues.get(noteId);
+    if (observed) {
+      try { await observed; } catch (e) { /* the caller owns the write error */ }
+    }
+  } while (_noteLocalWriteQueues.get(noteId) && _noteLocalWriteQueues.get(noteId) !== observed);
+  return _syncReadCurrentNote(noteId);
+}
+
 function _enqueueNoteRemoteCompletion(noteId, generation, task) {
   const previous = _noteRemoteCompletionQueues.get(noteId) || Promise.resolve();
   const completion = previous.catch(() => {}).then(async () => {
     if (!_isCurrentNoteSyncGeneration(noteId, generation)) {
-      return { stale: true, note: await _syncReadCurrentNote(noteId) };
+      return { stale: true, note: await _readAfterLatestLocalWrite(noteId) };
     }
     await task();
     return { stale: false };
@@ -247,7 +275,11 @@ async function saveNoteFS(note) {
 
   // Always save the original local payload first. If Storage upload fails,
   // the note text and detached local images remain available offline.
-  let localSaveResult = await saveNote(record);
+  const firstLocalCompletion = await _enqueueNoteLocalWrite(id, generation, record);
+  if (firstLocalCompletion.stale || !_isCurrentNoteSyncGeneration(id, generation)) {
+    return _readAfterLatestLocalWrite(id);
+  }
+  let localSaveResult = firstLocalCompletion.result;
   const firstLocalVersion = {
     revision: localSaveResult?.revision ?? record.revision,
     updatedAt: localSaveResult?.updatedAt ?? record.updatedAt,
@@ -262,10 +294,16 @@ async function saveNoteFS(note) {
         const uploadedUrls = await uploadSlideImages(id, imagePlan.unique, imagePlan.pathNames);
         const currentBeforeCompletion = await _syncReadCurrentNote(id);
         if (!_isCurrentNoteSyncGeneration(id, generation)
-          || _syncVersionChanged(currentBeforeCompletion, firstLocalVersion)) return currentBeforeCompletion;
+          || _syncVersionChanged(currentBeforeCompletion, firstLocalVersion)) {
+          return _readAfterLatestLocalWrite(id);
+        }
         recordForRemote = _syncRecordWithUploadedUrls(record, imagePlan, uploadedUrls);
         // Replace detached local payloads only after every upload succeeds.
-        localSaveResult = await saveNote(recordForRemote);
+        const secondLocalCompletion = await _enqueueNoteLocalWrite(id, generation, recordForRemote);
+        if (secondLocalCompletion.stale || !_isCurrentNoteSyncGeneration(id, generation)) {
+          return _readAfterLatestLocalWrite(id);
+        }
+        localSaveResult = secondLocalCompletion.result;
         const currentAfterLocalCompletion = await _syncReadCurrentNote(id);
         const secondLocalVersion = {
           revision: localSaveResult?.revision ?? recordForRemote.revision,
@@ -273,7 +311,7 @@ async function saveNoteFS(note) {
         };
         if (!_isCurrentNoteSyncGeneration(id, generation)
           || _syncVersionChanged(currentAfterLocalCompletion, secondLocalVersion)) {
-          return currentAfterLocalCompletion;
+          return _readAfterLatestLocalWrite(id);
         }
       }
 
@@ -296,7 +334,7 @@ async function saveNoteFS(note) {
 
       const completion = await _enqueueNoteRemoteCompletion(id, generation, () =>
         writeFirestoreNote(ref, id, toSave, { merge: true }));
-      if (completion.stale) return completion.note || await _syncReadCurrentNote(id);
+      if (completion.stale) return completion.note || await _readAfterLatestLocalWrite(id);
     }
   } catch (error) {
     throw _carryLocalImageDegradation(error, localSaveResult);
