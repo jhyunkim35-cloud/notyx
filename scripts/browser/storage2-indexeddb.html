@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>STORAGE2 IndexedDB fixture</title>
+</head>
+<body>
+  <p>STORAGE2 IndexedDB fixture</p>
+  <script>
+    const DB_NAME = 'meetingAppDB';
+    const DB_VERSION = 6;
+
+    function uuidv4() {
+      return 'fixture-id';
+    }
+
+    async function getNextSortOrder() {
+      return 0;
+    }
+
+    window.__storage2Fixture = {
+      dbName: DB_NAME,
+      remoteUrl: 'https://cdn.example.test/slide-5.png',
+      remoteUrlTwo: 'https://cdn.example.test/slide-7.png',
+      pngBase64: 'iVBORw0KGgo=',
+      jpegDataUrl: 'data:image/jpeg;base64,/9j/',
+    };
+
+    function requestResult(request) {
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function transactionDone(transaction) {
+      return new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('Fixture transaction aborted'));
+      });
+    }
+
+    async function deleteDatabase(name) {
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(name);
+        request.onsuccess = resolve;
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('Fixture database delete was blocked'));
+      });
+    }
+
+    function createMainSchema(database) {
+      const notes = database.createObjectStore('notes', { keyPath: 'id' });
+      notes.createIndex('folderId', 'folderId', { unique: false });
+      notes.createIndex('createdAt', 'createdAt', { unique: false });
+      notes.createIndex('title', 'title', { unique: false });
+      notes.createIndex('updatedAt', 'updatedAt', { unique: false });
+
+      const folders = database.createObjectStore('folders', { keyPath: 'id' });
+      folders.createIndex('name', 'name', { unique: false });
+
+      const quizResults = database.createObjectStore('quizResults', { keyPath: 'id' });
+      quizResults.createIndex('noteId', 'noteId', { unique: false });
+      quizResults.createIndex('timestamp', 'timestamp', { unique: false });
+
+      const srsCards = database.createObjectStore('srsCards', { keyPath: 'id' });
+      srsCards.createIndex('folderId', 'folderId', { unique: false });
+      srsCards.createIndex('nextReviewDate', 'nextReviewDate', { unique: false });
+    }
+
+    function createTimetableFixture() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('timetableDB', 1);
+        request.onupgradeneeded = event => {
+          const database = event.target.result;
+          if (!database.objectStoreNames.contains('timetable')) {
+            const timetable = database.createObjectStore('timetable', { keyPath: 'entryId' });
+            timetable.createIndex('dayOfWeek', 'dayOfWeek', { unique: false });
+          }
+        };
+        request.onsuccess = event => {
+          const database = event.target.result;
+          const transaction = database.transaction('timetable', 'readwrite');
+          transaction.objectStore('timetable').put({
+            entryId: 'timetable-entry-1',
+            courseName: 'IndexedDB migration',
+            folderId: 'folder-1',
+            dayOfWeek: 2,
+            startTime: '10:00',
+          });
+          transactionDone(transaction).then(() => {
+            database.close();
+            resolve();
+          }, reject);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function legacyNotes({ invalid }) {
+      const { remoteUrl, remoteUrlTwo, pngBase64, jpegDataUrl } = window.__storage2Fixture;
+      if (invalid) {
+        return [{
+          id: 'invalid-note',
+          title: 'Invalid conversion fixture',
+          notesText: 'This record must abort the upgrade.',
+          notesHtml: '<img src="data:image/png;base64,%">',
+        }];
+      }
+      return [
+        {
+          id: 'payload-note',
+          title: 'Payload note',
+          folderId: 'folder-1',
+          createdAt: '2026-08-20T10:00:00.000Z',
+          updatedAt: '2026-08-20T10:01:00.000Z',
+          notesText: 'Local payloads and URL references.',
+          extractedImages: [
+            { slideNumber: 2, imageBase64: pngBase64, mimeType: 'image/png', fileName: 'slide-2.png' },
+            ,
+            { slideNumber: 5, imageBase64: remoteUrl, mimeType: 'url', fileName: 'slide-5.png' },
+          ],
+          slideImages: [
+            { slideNumber: 2, imageBase64: jpegDataUrl, mimeType: 'image/jpeg', fileName: 'slide-2-detail.jpg' },
+            ,
+            { slideNumber: 5, imageBase64: remoteUrl, mimeType: 'url', fileName: 'slide-5.png' },
+          ],
+          slideImageUrls: [null, remoteUrl, null, remoteUrlTwo],
+          notesHtml: `<p>본문</p><img class="local" src="data:image/png;base64,${pngBase64}" alt="local"><img src="${remoteUrl}">`,
+        },
+        {
+          id: 'url-note',
+          title: 'URL-only note',
+          folderId: null,
+          createdAt: '2026-08-20T11:00:00.000Z',
+          updatedAt: '2026-08-20T11:01:00.000Z',
+          notesText: 'Remote image references remain remote.',
+          extractedImages: [
+            { slideNumber: 7, imageBase64: remoteUrlTwo, mimeType: 'url', fileName: 'slide-7.png' },
+          ],
+          slideImages: [
+            { slideNumber: 7, imageBase64: remoteUrlTwo, mimeType: 'url', fileName: 'slide-7.png' },
+          ],
+          slideImageUrls: [remoteUrlTwo],
+          notesHtml: `<p>원격 이미지</p><img src="${remoteUrlTwo}">`,
+        },
+        {
+          id: 'html-note',
+          title: 'HTML payload note',
+          folderId: 'folder-1',
+          createdAt: '2026-08-20T12:00:00.000Z',
+          updatedAt: '2026-08-20T12:01:00.000Z',
+          notesText: 'The HTML image has no array owner.',
+          notesHtml: `<p>HTML only</p><img src="data:image/png;base64,${pngBase64}" type="image/png">`,
+        },
+      ];
+    }
+
+    async function createV5Fixture(options = {}) {
+      await deleteDatabase(DB_NAME);
+      await deleteDatabase('timetableDB');
+      await createTimetableFixture();
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 5);
+        request.onupgradeneeded = event => {
+          const database = event.target.result;
+          createMainSchema(database);
+          const transaction = event.target.transaction;
+          transaction.objectStore('notes').put(legacyNotes(options)[0]);
+          if (!options.invalid) {
+            for (const note of legacyNotes(options).slice(1)) transaction.objectStore('notes').put(note);
+            transaction.objectStore('folders').put({ id: 'folder-1', name: 'Storage 2', color: '#22c55e' });
+            transaction.objectStore('quizResults').put({ id: 'quiz-1', noteId: 'payload-note', timestamp: '2026-08-20T10:02:00.000Z' });
+            transaction.objectStore('srsCards').put({ id: 'srs-1', folderId: 'folder-1', nextReviewDate: '2026-08-21' });
+          }
+        };
+        request.onsuccess = event => {
+          event.target.result.close();
+          resolve();
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    window.__createV5Fixture = createV5Fixture;
+    window.__storage2FixtureReady = true;
+  </script>
+  <script src="../../public/js/note_images.js"></script>
+  <script src="../../public/js/storage.js"></script>
+</body>
+</html>

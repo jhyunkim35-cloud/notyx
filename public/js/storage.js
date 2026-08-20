@@ -12,9 +12,9 @@
 // indexNames so each step is idempotent on both paths.
 //
 // Never drop a store or an index here — that is data loss, not migration.
-function ensureStore(e, name) {
+function ensureStore(e, name, keyPath = 'id') {
   const db = e.target.result;
-  if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'id' });
+  if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath });
 }
 function ensureIndex(e, name, indexName, keyPath) {
   const store = e.target.transaction.objectStore(name);
@@ -43,6 +43,32 @@ const IDB_MIGRATIONS = [
       ensureIndex(e, 'quizResults', 'timestamp',      'timestamp');
       ensureIndex(e, 'srsCards',    'folderId',       'folderId');
       ensureIndex(e, 'srsCards',    'nextReviewDate', 'nextReviewDate');
+    },
+  },
+  {
+    version: 6,
+    run(e) {
+      ensureStore(e, 'noteImages', 'noteId');
+      const transaction = e.target.transaction;
+      const notes = transaction.objectStore('notes');
+      const noteImages = transaction.objectStore('noteImages');
+      const cursorRequest = notes.openCursor();
+
+      cursorRequest.onerror = () => transaction.abort();
+      cursorRequest.onsuccess = event => {
+        const cursor = event.target.result;
+        if (!cursor) return;
+
+        try {
+          const detached = detachNoteImages(cursor.value);
+          if (detached.imageRecord.images.length > 0) noteImages.put(detached.imageRecord);
+          cursor.update(detached.note);
+        } catch (error) {
+          transaction.abort();
+          return;
+        }
+        cursor.continue();
+      };
     },
   },
 ];
