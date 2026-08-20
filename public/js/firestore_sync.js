@@ -44,6 +44,15 @@ function stripFirestoreNotePayloads(note) {
   delete lightweight.extractedImages;
   delete lightweight.slideImages;
   delete lightweight.filteredText;
+  if (Array.isArray(lightweight.slideImageUrls)) {
+    const urls = new Array(lightweight.slideImageUrls.length);
+    for (let index = 0; index < lightweight.slideImageUrls.length; index += 1) {
+      urls[index] = index in lightweight.slideImageUrls
+        ? lightweight.slideImageUrls[index]
+        : null;
+    }
+    lightweight.slideImageUrls = urls;
+  }
   return lightweight;
 }
 
@@ -55,29 +64,16 @@ async function updateFirestoreNote(ref, id, partial) {
   return ref.doc(id).update(stripFirestoreNotePayloads(partial));
 }
 
-function _syncImageSelection(note) {
-  if (Array.isArray(note && note.slideImages) && note.slideImages.length > 0) {
-    return { field: 'slideImages', entries: note.slideImages };
-  }
-  if (Array.isArray(note && note.extractedImages) && note.extractedImages.length > 0) {
-    return { field: 'extractedImages', entries: note.extractedImages };
-  }
-  return null;
-}
-
 function _syncImageSource(entry) {
   if (typeof noteImageSourceInfo === 'function') return noteImageSourceInfo(entry);
   if (typeof entry === 'string' && isRemoteImageSource(entry)) return { kind: 'remote', value: entry };
   return entry ? { kind: 'local', value: entry } : null;
 }
 
-function _syncHasLocalImages(entries) {
-  for (let index = 0; index < entries.length; index += 1) {
-    if (!(index in entries) || entries[index] == null) continue;
-    const source = _syncImageSource(entries[index]);
-    if (!source || source.kind === 'local') return true;
-  }
-  return false;
+function _syncImageSourceKey(source, entry) {
+  if (source && source.signature) return source.signature;
+  if (typeof entry === 'string') return 'string:' + entry;
+  try { return 'entry:' + JSON.stringify(entry); } catch (e) { return String(entry); }
 }
 
 function _syncEntryWithUrl(entry, url) {
@@ -85,7 +81,6 @@ function _syncEntryWithUrl(entry, url) {
     ? Object.assign({}, entry)
     : {};
   output.imageBase64 = url;
-  output.mimeType = 'url';
   delete output.blob;
   delete output.src;
   delete output.data;
@@ -95,35 +90,96 @@ function _syncEntryWithUrl(entry, url) {
   return output;
 }
 
-function _syncRecordWithUploadedUrls(record, selection, urls) {
-  const merged = Object.assign({}, record);
-  const entries = new Array(selection.entries.length);
-  for (let index = 0; index < selection.entries.length; index += 1) {
-    if (!(index in selection.entries)) continue;
-    const entry = selection.entries[index];
-    if (entry == null) {
-      entries[index] = entry;
-      continue;
+function _syncImagePlan(note) {
+  const selections = ['slideImages', 'extractedImages']
+    .filter(field => Array.isArray(note && note[field]) && note[field].length > 0)
+    .map(field => ({ field, entries: note[field] }));
+  const unique = [];
+  const pathIndexes = [];
+  const owners = new Map();
+  const references = [];
+
+  for (const selection of selections) {
+    for (let index = 0; index < selection.entries.length; index += 1) {
+      if (!(index in selection.entries) || selection.entries[index] == null) continue;
+      const entry = selection.entries[index];
+      const source = _syncImageSource(entry);
+      if (source && source.kind === 'remote') {
+        references.push({ field: selection.field, index, source, key: null });
+        continue;
+      }
+      const key = _syncImageSourceKey(source, entry);
+      if (!owners.has(key)) {
+        owners.set(key, unique.length);
+        unique.push(entry);
+        pathIndexes.push(index);
+      }
+      references.push({ field: selection.field, index, source, key });
     }
-    const url = urls[index];
-    entries[index] = url ? _syncEntryWithUrl(entry, url) : entry;
   }
-  merged[selection.field] = entries;
+  return { selections, unique, pathIndexes, references, hasLocal: unique.length > 0 };
+}
+
+function _syncRecordWithUploadedUrls(record, plan, urls) {
+  const merged = Object.assign({}, record);
+  const sourceUrls = new Map();
+  for (let index = 0; index < plan.unique.length; index += 1) {
+    if (index in urls && urls[index]) {
+      sourceUrls.set(_syncImageSourceKey(_syncImageSource(plan.unique[index]), plan.unique[index]), urls[index]);
+    }
+  }
+
+  for (const selection of plan.selections) {
+    const entries = new Array(selection.entries.length);
+    for (let index = 0; index < selection.entries.length; index += 1) {
+      if (!(index in selection.entries)) continue;
+      const entry = selection.entries[index];
+      if (entry == null) {
+        entries[index] = entry;
+        continue;
+      }
+      const source = _syncImageSource(entry);
+      const key = source && source.kind === 'remote'
+        ? null
+        : _syncImageSourceKey(source, entry);
+      const url = key ? sourceUrls.get(key) : null;
+      entries[index] = url ? _syncEntryWithUrl(entry, url) : entry;
+    }
+    merged[selection.field] = entries;
+  }
 
   const slideImageUrls = new Array(
-    Array.isArray(record.slideImageUrls) ? record.slideImageUrls.length : selection.entries.length,
+    Array.isArray(record.slideImageUrls)
+      ? record.slideImageUrls.length
+      : Math.max(0, ...plan.selections.map(selection => selection.entries.length)),
   );
   if (Array.isArray(record.slideImageUrls)) {
     for (let index = 0; index < record.slideImageUrls.length; index += 1) {
       if (index in record.slideImageUrls) slideImageUrls[index] = record.slideImageUrls[index];
     }
   }
-  if (slideImageUrls.length < selection.entries.length) slideImageUrls.length = selection.entries.length;
-  for (let index = 0; index < urls.length; index += 1) {
-    if (index in urls && urls[index]) slideImageUrls[index] = urls[index];
+  for (const reference of plan.references) {
+    const url = reference.key ? sourceUrls.get(reference.key) : reference.source?.value;
+    if (!url) continue;
+    if (reference.key || !(reference.index in slideImageUrls) || slideImageUrls[reference.index] == null) {
+      slideImageUrls[reference.index] = url;
+    }
   }
   merged.slideImageUrls = slideImageUrls;
   return merged;
+}
+
+function _syncVersionChanged(current, baseline) {
+  if (!current) return false;
+  const hasRevision = baseline.revision !== undefined || current.revision !== undefined;
+  if (hasRevision && current.revision !== baseline.revision) return true;
+  const hasUpdatedAt = baseline.updatedAt !== undefined || current.updatedAt !== undefined;
+  return hasUpdatedAt && current.updatedAt !== baseline.updatedAt;
+}
+
+async function _syncReadCurrentNote(id) {
+  if (typeof getNote !== 'function') return null;
+  try { return await getNote(id); } catch (e) { return null; }
 }
 
 async function saveNoteFS(note) {
@@ -149,22 +205,32 @@ async function saveNoteFS(note) {
   const now = new Date().toISOString();
   const id = note.id || uuidv4();
   const record = Object.assign({ folderId: null, createdAt: now }, note, { id, updatedAt: now });
-  const imageSelection = _syncImageSelection(record);
+  const imagePlan = _syncImagePlan(record);
 
   // Always save the original local payload first. If Storage upload fails,
   // the note text and detached local images remain available offline.
   let localSaveResult = await saveNote(record);
+  const firstLocalVersion = {
+    revision: localSaveResult?.revision ?? record.revision,
+    updatedAt: localSaveResult?.updatedAt ?? record.updatedAt,
+  };
   let recordForRemote = record;
 
   // If logged in, upload images to Storage and save to Firestore
   const ref = userNotesRef();
   try {
     if (ref) {
-      if (imageSelection && _syncHasLocalImages(imageSelection.entries)) {
-        const uploadedUrls = await uploadSlideImages(id, imageSelection.entries);
-        recordForRemote = _syncRecordWithUploadedUrls(record, imageSelection, uploadedUrls);
+      if (imagePlan.hasLocal) {
+        const uploadedUrls = await uploadSlideImages(id, imagePlan.unique, imagePlan.pathIndexes);
+        const currentBeforeCompletion = await _syncReadCurrentNote(id);
+        if (_syncVersionChanged(currentBeforeCompletion, firstLocalVersion)) return currentBeforeCompletion;
+        recordForRemote = _syncRecordWithUploadedUrls(record, imagePlan, uploadedUrls);
         // Replace detached local payloads only after every upload succeeds.
         localSaveResult = await saveNote(recordForRemote);
+        const currentAfterLocalCompletion = await _syncReadCurrentNote(id);
+        if (_syncVersionChanged(currentAfterLocalCompletion, firstLocalVersion)) {
+          return currentAfterLocalCompletion;
+        }
       }
 
       const toSave = Object.assign({}, recordForRemote);
@@ -320,21 +386,15 @@ async function getAllNotesFS() {
   }
   try {
     const snap = await ref.get();
-    const notes = snap.docs.map(d => Object.assign({}, d.data()));
-    // Mirror set into IDB as a side effect so future offline loads work.
-    // We don't delete IDB-only notes here — that's the realtime listener's
-    // job in v2; for now an IDB-only note still appears so the user never
-    // sees their unsynced work vanish.
-    try {
-      const conn = await openDB();
-      await new Promise((res, rej) => {
-        const tx = conn.transaction('notes', 'readwrite');
-        const store = tx.objectStore('notes');
-        for (const n of notes) store.put(n);
-        tx.oncomplete = res;
-        tx.onerror = e => rej(e.target.error);
-      });
-    } catch (e) { /* best-effort */ }
+    const notes = snap.docs.map(d => stripFirestoreNotePayloads(d.data()));
+    // Mirror through saveNote so its detached-image merge preserves any
+    // existing local marker HTML and noteImages ownership. The sanitized
+    // list record omits image fields, so this path never hydrates payloads.
+    for (const note of notes) {
+      try { await saveNote(note); } catch (e) {
+        console.warn('[getAllNotesFS] local metadata mirror failed:', note.id, e.message);
+      }
+    }
     const sorted = notes.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     _notesCache = sorted; _notesCacheAt = Date.now(); _notesCacheUid = uid;
     return sorted;
@@ -773,7 +833,7 @@ async function syncNotesOnLogin() {
 
 // getUserUsage, incrementUsage, canAnalyze, setPaidPlan moved to /js/payment.js
 
-async function uploadSlideImages(noteId, slideImages) {
+async function uploadSlideImages(noteId, slideImages, pathIndexes) {
   if (!currentUser || !slideImages || !slideImages.length) return [];
   const urls = new Array(slideImages.length);
   for (let i = 0; i < slideImages.length; i++) {
@@ -788,7 +848,10 @@ async function uploadSlideImages(noteId, slideImages) {
       urls[i] = source.value;
       continue;
     }
-    const path = 'users/' + currentUser.uid + '/notes/' + noteId + '/slide_' + i + '.png';
+    const storageIndex = Array.isArray(pathIndexes) && pathIndexes[i] !== undefined
+      ? pathIndexes[i]
+      : i;
+    const path = 'users/' + currentUser.uid + '/notes/' + noteId + '/slide_' + storageIndex + '.png';
     const ref = storage.ref(path);
     let data;
     const contentType = source?.mimeType || img.mimeType || 'image/png';
