@@ -20,7 +20,7 @@ _storage2_run_node() {
   status=$?
   if [ "$status" -ne 0 ]; then
     _fail "$label (exit $status: $(printf '%s' "$output" | tail -3 | tr '\n' ' '))"
-  elif ! printf '%s' "$output" | grep -Fq -- "$success_marker"; then
+  elif ! printf '%s\n' "$output" | grep -Fxq -- "$success_marker"; then
     _fail "$label (missing success marker: '$success_marker')"
   elif printf '%s' "$output" | grep -Eiq '(^|[^A-Za-z])(skip|skipped|skipping)([^A-Za-z]|$)'; then
     _fail "$label (skip/skipped/skipping output is not accepted)"
@@ -30,17 +30,18 @@ _storage2_run_node() {
 }
 
 _storage2_run_chromium() {
+  local label="STORAGE2-1l: real Chromium IndexedDB test"
   local output status
   output=$(node scripts/test_storage2_browser.mjs 2>&1)
   status=$?
   if [ "$status" -ne 0 ]; then
-    _fail "STORAGE2-1e: real Chromium IndexedDB test failed (exit $status: $(printf '%s' "$output" | tail -3 | tr '\n' ' '))"
+    _fail "$label failed (exit $status: $(printf '%s' "$output" | tail -3 | tr '\n' ' '))"
   elif ! printf '%s' "$output" | grep -Fq 'STORAGE2 Chromium IndexedDB: PASS'; then
-    _fail "STORAGE2-1e: real Chromium test did not report its PASS marker (silent skip is not accepted)"
+    _fail "$label did not report its PASS marker (silent skip is not accepted)"
   elif printf '%s' "$output" | grep -Eiq '(^|[^A-Za-z])(skip|skipped|skipping)([^A-Za-z]|$)'; then
-    _fail "STORAGE2-1e: real Chromium test reported a skip"
+    _fail "$label reported a skip"
   else
-    _pass "STORAGE2-1e: real Chromium IndexedDB test passed (Playwright + Chrome + PASS marker)"
+    _pass "$label passed (Playwright + Chrome + PASS marker)"
   fi
 }
 
@@ -80,22 +81,34 @@ _storage2_region_count() {
   fi
 }
 
+_storage2_assert_unique_ids() {
+  local duplicate
+  local label="STORAGE2-6a: every STORAGE2 assertion/result ID is unique"
+  duplicate=$(grep -oE 'STORAGE2-[0-9]+[a-z]+' "${BASH_SOURCE[0]}" | sort | uniq -d)
+  if [ -n "$duplicate" ]; then
+    _fail "$label (duplicates: $(printf '%s' "$duplicate" | tr '\n' ' '))"
+  else
+    _pass "$label"
+  fi
+}
+
 # ── 1) Deterministic suites and the real browser gate ──────────────────────
+_storage2_assert_unique_ids
 assert_file scripts/test_note_images.js "STORAGE2-1a: image contract test exists"
-_storage2_run_node "STORAGE2-1a: image contract test passed" "note images: 8 checks passed" node scripts/test_note_images.js
+_storage2_run_node "STORAGE2-1b: image contract test passed" "note images: 8 checks passed" node scripts/test_note_images.js
 
-assert_file scripts/test_storage2_task4_ui.js "STORAGE2-1b: UI contract test exists"
-_storage2_run_node "STORAGE2-1b: UI contract test passed" "STORAGE2 Task 4 UI: GREEN contract checks passed" node scripts/test_storage2_task4_ui.js
+assert_file scripts/test_storage2_task4_ui.js "STORAGE2-1c: UI contract test exists"
+_storage2_run_node "STORAGE2-1d: UI contract test passed" "STORAGE2 Task 4 UI: GREEN contract checks passed" node scripts/test_storage2_task4_ui.js
 
-assert_file scripts/test_storage2_sync.js "STORAGE2-1c: sync contract test exists"
-_storage2_run_node "STORAGE2-1c: sync contract test passed" "STORAGE2 sync: PASS" node scripts/test_storage2_sync.js
+assert_file scripts/test_storage2_sync.js "STORAGE2-1e: sync contract test exists"
+_storage2_run_node "STORAGE2-1f: sync contract test passed" "STORAGE2 sync: PASS (Task 5 payload-safe Firestore and sync contracts)" node scripts/test_storage2_sync.js
 
-assert_file scripts/test_storage2_lifecycle.js "STORAGE2-1d: lifecycle contract test exists"
-_storage2_run_node "STORAGE2-1d: lifecycle contract test passed" "STORAGE2 lifecycle: PASS" node scripts/test_storage2_lifecycle.js
+assert_file scripts/test_storage2_lifecycle.js "STORAGE2-1g: lifecycle contract test exists"
+_storage2_run_node "STORAGE2-1h: lifecycle contract test passed" "STORAGE2 lifecycle: PASS" node scripts/test_storage2_lifecycle.js
 
-assert_file scripts/test_storage2_browser.mjs "STORAGE2-1e: Chromium test exists"
-assert_file 'C:/Users/김준현/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs' "STORAGE2-1e: Playwright runtime exists"
-assert_file 'C:/Program Files/Google/Chrome/Application/chrome.exe' "STORAGE2-1e: Chrome executable exists"
+assert_file scripts/test_storage2_browser.mjs "STORAGE2-1i: Chromium test exists"
+assert_file 'C:/Users/김준현/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs' "STORAGE2-1j: Playwright runtime exists"
+assert_file 'C:/Program Files/Google/Chrome/Application/chrome.exe' "STORAGE2-1k: Chrome executable exists"
 _storage2_run_chromium
 
 # ── 2) IndexedDB schema and migration invariants ───────────────────────────
