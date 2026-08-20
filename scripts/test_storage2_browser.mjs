@@ -359,6 +359,15 @@ try {
     'getNote must not scan noteImages');
 
   const priorPayloadImages = await page.evaluate(() => window.__storage2ReadImageRecord('payload-note'));
+  const omittedLightweightBefore = await page.evaluate(async () => {
+    const note = (await getAllNotes()).find(candidate => candidate.id === 'payload-note');
+    return {
+      extractedImages: note.extractedImages,
+      slideImages: note.slideImages,
+      notesHtml: note.notesHtml,
+      slideImageUrls: note.slideImageUrls,
+    };
+  });
   await page.evaluate(() => window.__storage2ResetIdbTrace());
   await page.evaluate(() => saveNote({
     id: 'payload-note',
@@ -367,6 +376,20 @@ try {
   }));
   const omittedUpdate = await page.evaluate(() => window.__storage2ReadImageRecord('payload-note'));
   assert.deepEqual(omittedUpdate, priorPayloadImages, 'omitted image fields must preserve the detached record');
+  const omittedLightweightAfter = await page.evaluate(async () => {
+    const note = (await getAllNotes()).find(candidate => candidate.id === 'payload-note');
+    return {
+      extractedImages: note.extractedImages,
+      slideImages: note.slideImages,
+      notesHtml: note.notesHtml,
+      slideImageUrls: note.slideImageUrls,
+    };
+  });
+  assert.deepEqual(omittedLightweightAfter, omittedLightweightBefore,
+    'omitted image fields must preserve every lightweight image field and URL/marker reference');
+  assert.equal(omittedLightweightAfter.extractedImages[2].imageBase64, 'https://cdn.example.test/slide-5.png');
+  assert.equal(omittedLightweightAfter.slideImageUrls[1], 'https://cdn.example.test/slide-5.png');
+  assert.match(omittedLightweightAfter.notesHtml, /data-note-image-ref="note-image-2"/);
   const omittedTrace = await page.evaluate(() => window.__storage2IdbTrace.slice());
   const omittedWriteTransactions = omittedTrace.filter(entry => entry.type === 'transaction' && entry.mode === 'readwrite');
   assert.deepEqual(omittedWriteTransactions.map(entry => entry.storeNames.slice().sort()), [['noteImages', 'notes']],
@@ -433,9 +456,17 @@ try {
     id: 'quota-note',
     title: 'Quota baseline note',
     notesText: 'Prior image survives a quota failure.',
+    folderId: 'folder-1',
+    customMetadata: { revision: 1, source: 'quota-fixture' },
     extractedImages: [{ slideNumber: 3, imageBase64: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png', fileName: 'prior.png' }],
+    slideImages: [{ slideNumber: 3, imageBase64: 'data:image/jpeg;base64,/9j/', mimeType: 'image/jpeg', fileName: 'prior-detail.jpg' }],
+    slideImageUrls: [null, 'https://cdn.example.test/prior.png'],
+    notesHtml: '<p>Prior HTML reference</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="prior">',
   }));
   const priorQuotaImages = await page.evaluate(() => window.__storage2ReadImageRecord('quota-note'));
+  const priorQuotaLightweight = await page.evaluate(async () => {
+    return (await getAllNotes()).find(note => note.id === 'quota-note');
+  });
   await page.evaluate(() => window.__storage2ResetIdbTrace());
   const quotaResult = await page.evaluate(async () => {
     const originalPut = IDBObjectStore.prototype.put;
@@ -452,6 +483,8 @@ try {
         id: 'quota-note',
         title: 'Quota text update',
         notesText: 'Text must survive the image quota failure.',
+        folderId: 'folder-2',
+        customMetadata: { revision: 2, source: 'quota-fallback', retained: true },
         extractedImages: [{ slideNumber: 99, imageBase64: 'data:image/jpeg;base64,/9j/', mimeType: 'image/jpeg', fileName: 'new.jpg' }],
       });
       return { result, injected };
@@ -469,11 +502,92 @@ try {
     .map(entry => entry.storeNames.slice().sort()), [['noteImages', 'notes'], ['notes']],
   'quota fallback must abort the image transaction before the lightweight retry');
   const quotaNote = await page.evaluate(() => getNote('quota-note'));
+  const quotaLightweight = await page.evaluate(async () => {
+    return (await getAllNotes()).find(note => note.id === 'quota-note');
+  });
+  assert.equal(quotaResult.result.title, 'Quota text update');
+  assert.equal(quotaResult.result.notesText, 'Text must survive the image quota failure.');
+  assert.equal(quotaResult.result.folderId, 'folder-2');
+  assert.deepEqual(quotaResult.result.customMetadata, { revision: 2, source: 'quota-fallback', retained: true });
+  assert.equal(quotaLightweight.title, quotaResult.result.title);
+  assert.equal(quotaLightweight.notesText, quotaResult.result.notesText);
+  assert.equal(quotaLightweight.folderId, quotaResult.result.folderId);
+  assert.deepEqual(quotaLightweight.customMetadata, quotaResult.result.customMetadata);
+  assert.equal(quotaLightweight.updatedAt, quotaResult.result.updatedAt);
+  assert.notDeepEqual(quotaLightweight.customMetadata, priorQuotaLightweight.customMetadata);
+  assert.notEqual(quotaLightweight.folderId, priorQuotaLightweight.folderId);
   assert.equal(quotaNote.notesText, 'Text must survive the image quota failure.');
+  assert.equal(quotaNote.extractedImages[0].fileName, 'prior.png');
+  assert.equal(quotaNote.slideImages[0].fileName, 'prior-detail.jpg');
   assert.match(quotaNote.extractedImages[0].imageBase64, /^iVBORw0KGgo=/,
     'quota fallback must preserve the prior image reference when possible');
+  assert.match(quotaNote.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/);
   assert.deepEqual(await page.evaluate(() => window.__storage2ReadImageRecord('quota-note')), priorQuotaImages,
     'quota fallback must preserve the prior detached image record');
+
+  await page.evaluate(() => saveNote({
+    id: 'quota-failure-note',
+    title: 'Quota fallback failure baseline',
+    notesText: 'This complete note must survive fallback failure.',
+    folderId: 'folder-3',
+    customMetadata: { revision: 7, source: 'fallback-failure' },
+    extractedImages: [{ slideNumber: 8, imageBase64: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png', fileName: 'failure-prior.png' }],
+    slideImages: [{ slideNumber: 8, imageBase64: 'data:image/jpeg;base64,/9j/', mimeType: 'image/jpeg', fileName: 'failure-prior-detail.jpg' }],
+    slideImageUrls: ['https://cdn.example.test/failure-prior.png'],
+    notesHtml: '<p>Failure prior HTML</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="failure prior">',
+  }));
+  const fallbackFailureBeforeNote = await page.evaluate(async () => {
+    return (await getAllNotes()).find(note => note.id === 'quota-failure-note');
+  });
+  const fallbackFailureBeforeImages = await page.evaluate(() => window.__storage2ReadImageRecord('quota-failure-note'));
+  const fallbackFailure = await page.evaluate(async () => {
+    const originalPut = IDBObjectStore.prototype.put;
+    let imagePutAttempted = false;
+    let notesPutAttempted = false;
+    IDBObjectStore.prototype.put = function () {
+      if (this.name === 'noteImages' && !imagePutAttempted) {
+        imagePutAttempted = true;
+        throw new DOMException('fixture quota failure before fallback', 'QuotaExceededError');
+      }
+      if (this.name === 'notes') notesPutAttempted = true;
+      return originalPut.apply(this, arguments);
+    };
+    try {
+      try {
+        const value = await saveNote({
+          id: 'quota-failure-note',
+          title: 'Must not commit after fallback failure',
+          notesText: 'This update must be rejected.',
+          customMetadata: { revision: 8, uncloneable: function () {} },
+          extractedImages: [{ slideNumber: 9, imageBase64: 'data:image/jpeg;base64,/9j/', mimeType: 'image/jpeg', fileName: 'failure-new.jpg' }],
+        });
+        return { fulfilled: true, value, imagePutAttempted, notesPutAttempted };
+      } catch (error) {
+        return {
+          fulfilled: false,
+          value: undefined,
+          errorName: error && error.name,
+          imagePutAttempted,
+          notesPutAttempted,
+        };
+      }
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+  });
+  assert.equal(fallbackFailure.fulfilled, false, 'failed lightweight fallback must reject normally');
+  assert.equal(fallbackFailure.value, undefined, 'fallback failure must not return a degraded success');
+  assert.equal(fallbackFailure.errorName, 'DataCloneError');
+  assert.equal(fallbackFailure.imagePutAttempted, true, 'the primary image put must fail first');
+  assert.equal(fallbackFailure.notesPutAttempted, true, 'the lightweight fallback notes put must be attempted');
+  const fallbackFailureAfterNote = await page.evaluate(async () => {
+    return (await getAllNotes()).find(note => note.id === 'quota-failure-note');
+  });
+  const fallbackFailureAfterImages = await page.evaluate(() => window.__storage2ReadImageRecord('quota-failure-note'));
+  assert.deepEqual(fallbackFailureAfterNote, fallbackFailureBeforeNote,
+    'failed fallback must preserve the complete prior lightweight note');
+  assert.deepEqual(fallbackFailureAfterImages, fallbackFailureBeforeImages,
+    'failed fallback must preserve the prior detached image record');
 
   await page.evaluate(() => window.__storage2ResetIdbTrace());
   await page.evaluate(() => clearAllStorage());
@@ -481,9 +595,13 @@ try {
   assert.deepEqual(clearTrace.filter(entry => entry.type === 'transaction' && entry.mode === 'readwrite')
     .map(entry => entry.storeNames.slice().sort()), [['folders', 'noteImages', 'notes']],
   'clearAllStorage must clear notes, folders, and noteImages in one transaction');
+  const clearRequests = clearTrace.filter(entry => entry.type === 'request' && entry.operation === 'clear');
+  assert.equal(clearRequests.length, 3, 'clearAllStorage must issue exactly three clear requests');
+  assert.deepEqual(clearRequests.map(entry => entry.storeName).sort(), ['folders', 'noteImages', 'notes']);
   const cleared = await captureSnapshot(page, { production: true });
   assert.deepEqual(cleared.first.stores.notes.records, [], 'clearAllStorage must clear notes');
   assert.deepEqual(cleared.first.stores.noteImages.records, [], 'clearAllStorage must clear noteImages');
+  assert.deepEqual(cleared.first.stores.folders.records, [], 'clearAllStorage must clear folders');
   assert.deepEqual(cleared.timetable, snapshot.timetable, 'clearAllStorage must leave timetable behavior untouched');
 
   await page.evaluate(() => window.__createV5Fixture({ invalid: true }));
