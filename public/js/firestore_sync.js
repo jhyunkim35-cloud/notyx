@@ -31,6 +31,101 @@ function _carryLocalImageDegradation(error, localSaveResult) {
   return decorated;
 }
 
+function stripFirestoreNotePayloads(note) {
+  const detached = typeof stripNoteImagePayloads === 'function'
+    ? stripNoteImagePayloads(note || {})
+    : Object.assign({}, note || {});
+  const lightweight = typeof noteImageCopyMetadata === 'function'
+    ? noteImageCopyMetadata(detached, typeof noteImagePayloadOmitMap === 'function'
+      ? noteImagePayloadOmitMap()
+      : null)
+    : detached;
+  delete lightweight.notesHtml;
+  delete lightweight.extractedImages;
+  delete lightweight.slideImages;
+  delete lightweight.filteredText;
+  return lightweight;
+}
+
+async function writeFirestoreNote(ref, id, note, options) {
+  return ref.doc(id).set(stripFirestoreNotePayloads(note), options || { merge: true });
+}
+
+async function updateFirestoreNote(ref, id, partial) {
+  return ref.doc(id).update(stripFirestoreNotePayloads(partial));
+}
+
+function _syncImageSelection(note) {
+  if (Array.isArray(note && note.slideImages) && note.slideImages.length > 0) {
+    return { field: 'slideImages', entries: note.slideImages };
+  }
+  if (Array.isArray(note && note.extractedImages) && note.extractedImages.length > 0) {
+    return { field: 'extractedImages', entries: note.extractedImages };
+  }
+  return null;
+}
+
+function _syncImageSource(entry) {
+  if (typeof noteImageSourceInfo === 'function') return noteImageSourceInfo(entry);
+  if (typeof entry === 'string' && isRemoteImageSource(entry)) return { kind: 'remote', value: entry };
+  return entry ? { kind: 'local', value: entry } : null;
+}
+
+function _syncHasLocalImages(entries) {
+  for (let index = 0; index < entries.length; index += 1) {
+    if (!(index in entries) || entries[index] == null) continue;
+    const source = _syncImageSource(entries[index]);
+    if (!source || source.kind === 'local') return true;
+  }
+  return false;
+}
+
+function _syncEntryWithUrl(entry, url) {
+  const output = entry && typeof entry === 'object' && !(entry instanceof Blob)
+    ? Object.assign({}, entry)
+    : {};
+  output.imageBase64 = url;
+  output.mimeType = 'url';
+  delete output.blob;
+  delete output.src;
+  delete output.data;
+  delete output.payload;
+  delete output.base64;
+  delete output.imageData;
+  return output;
+}
+
+function _syncRecordWithUploadedUrls(record, selection, urls) {
+  const merged = Object.assign({}, record);
+  const entries = new Array(selection.entries.length);
+  for (let index = 0; index < selection.entries.length; index += 1) {
+    if (!(index in selection.entries)) continue;
+    const entry = selection.entries[index];
+    if (entry == null) {
+      entries[index] = entry;
+      continue;
+    }
+    const url = urls[index];
+    entries[index] = url ? _syncEntryWithUrl(entry, url) : entry;
+  }
+  merged[selection.field] = entries;
+
+  const slideImageUrls = new Array(
+    Array.isArray(record.slideImageUrls) ? record.slideImageUrls.length : selection.entries.length,
+  );
+  if (Array.isArray(record.slideImageUrls)) {
+    for (let index = 0; index < record.slideImageUrls.length; index += 1) {
+      if (index in record.slideImageUrls) slideImageUrls[index] = record.slideImageUrls[index];
+    }
+  }
+  if (slideImageUrls.length < selection.entries.length) slideImageUrls.length = selection.entries.length;
+  for (let index = 0; index < urls.length; index += 1) {
+    if (index in urls && urls[index]) slideImageUrls[index] = urls[index];
+  }
+  merged.slideImageUrls = slideImageUrls;
+  return merged;
+}
+
 async function saveNoteFS(note) {
   // ───── GHOST NOTE DIAGNOSTIC (temp, remove after debugging) ─────
   const _hasTitle = note && note.title && note.title.trim();
@@ -54,75 +149,47 @@ async function saveNoteFS(note) {
   const now = new Date().toISOString();
   const id = note.id || uuidv4();
   const record = Object.assign({ folderId: null, createdAt: now }, note, { id, updatedAt: now });
+  const imageSelection = _syncImageSelection(record);
 
-  // Always save full data to IndexedDB (local cache with base64 images)
-  const localSaveResult = await saveNote(record);
+  // Always save the original local payload first. If Storage upload fails,
+  // the note text and detached local images remain available offline.
+  let localSaveResult = await saveNote(record);
+  let recordForRemote = record;
 
   // If logged in, upload images to Storage and save to Firestore
   const ref = userNotesRef();
   try {
     if (ref) {
-      const toSave = Object.assign({}, record);
-    delete toSave.notesHtml;
-    // A2 fix: Don't blindly run all images through uploadSlideImages.
-    //
-    // saveNoteFS gets called from two very different places:
-    //   1. Fresh analysis  → toSave.slideImages is base64 (needs upload)
-    //   2. Folder move / image insert / folder delete → toSave.extractedImages
-    //      is the hydrated viewer shape (mimeType:'url' pointing at Firebase
-    //      Storage URLs that already exist).
-    //
-    // If we run case 2 through uploadSlideImages, two things break:
-    //   - Hydrate's .filter(Boolean) may have dropped null slots, so the
-    //     re-emitted slideImageUrls array shrinks (this is the 4/17 PPT
-    //     corruption pattern).
-    //   - It's wasted work — those URLs already exist on Storage.
-    //
-    // The guard: if every extractedImages entry is already a uploaded URL,
-    // keep the existing slideImageUrls (which the spread copied from
-    // `record` → `note`) untouched.
-    if (toSave.slideImages && toSave.slideImages.length) {
-      // Case 1: fresh base64 from analysis pipeline — must upload
-      toSave.slideImageUrls = await uploadSlideImages(id, toSave.slideImages);
-    } else if (toSave.extractedImages && toSave.extractedImages.length) {
-      const allUrlTyped = toSave.extractedImages.every(img =>
-        img && img.mimeType === 'url' &&
-        typeof img.imageBase64 === 'string' &&
-        img.imageBase64.startsWith('https://')
-      );
-      if (!allUrlTyped) {
-        // Case 2b: at least one entry is base64 (e.g. user inserted a new
-        // image into the note) — re-upload the whole set.
-        toSave.slideImageUrls = await uploadSlideImages(id, toSave.extractedImages);
+      if (imageSelection && _syncHasLocalImages(imageSelection.entries)) {
+        const uploadedUrls = await uploadSlideImages(id, imageSelection.entries);
+        recordForRemote = _syncRecordWithUploadedUrls(record, imageSelection, uploadedUrls);
+        // Replace detached local payloads only after every upload succeeds.
+        localSaveResult = await saveNote(recordForRemote);
       }
-      // Case 2a (allUrlTyped): leave toSave.slideImageUrls alone — it was
-      // copied from the spread of `record` and is already correct.
-    }
-    delete toSave.slideImages;
-    delete toSave.extractedImages;
-    delete toSave.filteredText;
 
-    // Progressive size reduction until under 900KB
-    const stripOrder = ['pipelineLog', 'highlightedTranscript', 'pptText', 'recText'];
-    for (const key of stripOrder) {
-      if (JSON.stringify(toSave).length <= 900000) break;
-      console.warn('saveNoteFS: stripping', key, '(' + JSON.stringify(toSave[key] || '').length + ' chars)');
-      delete toSave[key];
-    }
+      const toSave = Object.assign({}, recordForRemote);
 
-    const finalSize = JSON.stringify(toSave).length;
-    if (finalSize > 950000) {
-      console.error('saveNoteFS: STILL too large after all strips:', finalSize,
-        Object.keys(toSave).map(k => k + ':' + JSON.stringify(toSave[k] || '').length).join(', '));
-      return Object.assign({}, record, localSaveResult); // skip Firestore write, IndexedDB already saved
-    }
+      // Progressive size reduction until under 900KB
+      const stripOrder = ['pipelineLog', 'highlightedTranscript', 'pptText', 'recText'];
+      for (const key of stripOrder) {
+        if (JSON.stringify(toSave).length <= 900000) break;
+        console.warn('saveNoteFS: stripping', key, '(' + JSON.stringify(toSave[key] || '').length + ' chars)');
+        delete toSave[key];
+      }
 
-      await ref.doc(id).set(toSave, { merge: true });
+      const finalSize = JSON.stringify(stripFirestoreNotePayloads(toSave)).length;
+      if (finalSize > 950000) {
+        console.error('saveNoteFS: STILL too large after all strips:', finalSize,
+          Object.keys(toSave).map(k => k + ':' + JSON.stringify(toSave[k] || '').length).join(', '));
+        return Object.assign({}, recordForRemote, localSaveResult); // skip Firestore write, IndexedDB already saved
+      }
+
+      await writeFirestoreNote(ref, id, toSave, { merge: true });
     }
   } catch (error) {
     throw _carryLocalImageDegradation(error, localSaveResult);
   }
-  return Object.assign({}, record, localSaveResult);
+  return Object.assign({}, recordForRemote, localSaveResult);
 }
 // ─────────────────────────────────────────────────────────────────
 // Firestore is the truth source. IDB is an offline-only cache.
@@ -147,11 +214,16 @@ function _hydrateNoteForViewer(note) {
     note.notesHtml = renderMarkdown(note.notesText);
   }
   if (note.slideImageUrls && !note.extractedImages) {
-    note.extractedImages = note.slideImageUrls
-      .map((url, i) => url
-        ? { slideNumber: i + 1, imageBase64: url, mimeType: 'url' }
-        : null)
-      .filter(Boolean);
+    note.extractedImages = new Array(note.slideImageUrls.length);
+    for (let index = 0; index < note.slideImageUrls.length; index += 1) {
+      if (index in note.slideImageUrls && note.slideImageUrls[index]) {
+        note.extractedImages[index] = {
+          slideNumber: index + 1,
+          imageBase64: note.slideImageUrls[index],
+          mimeType: 'url',
+        };
+      }
+    }
   }
   return note;
 }
@@ -196,7 +268,9 @@ async function getNoteFS(id) {
         || Object.prototype.hasOwnProperty.call(rawData, 'slideImages');
       const metadata = Object.assign({}, data, { id });
       if (local) {
-        if (!remoteHasDetachedArrays) {
+        if (!remoteHasDetachedArrays
+          && ((Array.isArray(local.extractedImages) && local.extractedImages.length > 0)
+            || (Array.isArray(local.slideImages) && local.slideImages.length > 0))) {
           delete metadata.extractedImages;
           delete metadata.slideImages;
         }
@@ -246,7 +320,7 @@ async function getAllNotesFS() {
   }
   try {
     const snap = await ref.get();
-    const notes = snap.docs.map(d => _hydrateNoteForViewer(d.data()));
+    const notes = snap.docs.map(d => Object.assign({}, d.data()));
     // Mirror set into IDB as a side effect so future offline loads work.
     // We don't delete IDB-only notes here — that's the realtime listener's
     // job in v2; for now an IDB-only note still appears so the user never
@@ -278,7 +352,7 @@ async function deleteNoteFS(id) {
     const note = await getNote(id);
     if (note) audioPath = note.audioStoragePath || null;
   } catch (e) { /* best-effort */ }
-  await deleteNote(id);
+  let firstError = null;
   const ref = userNotesRef();
   if (ref) {
     if (!audioPath) {
@@ -288,8 +362,21 @@ async function deleteNoteFS(id) {
         if (snap.exists) audioPath = (snap.data() || {}).audioStoragePath || null;
       } catch (e) { /* best-effort */ }
     }
-    await ref.doc(id).delete();
-    await deleteSlideImages(id);
+    try {
+      await ref.doc(id).delete();
+    } catch (e) {
+      firstError = e;
+    }
+    try {
+      await deleteSlideImages(id);
+    } catch (e) {
+      if (!firstError) firstError = e;
+    }
+  }
+  try {
+    await deleteNote(id);
+  } catch (e) {
+    if (!firstError) firstError = e;
   }
   await deleteNoteAudio(audioPath);
   // Track deletion for sync
@@ -301,6 +388,7 @@ async function deleteNoteFS(id) {
     const capped = deleted.length > 200 ? deleted.slice(deleted.length - 200) : deleted;
     localStorage.setItem(deletedKey, JSON.stringify(capped));
   }
+  if (firstError) throw firstError;
 }
 async function searchNotesFS(query) {
   const all = await getAllNotesFS();
@@ -327,7 +415,7 @@ async function safeNotePartialUpdate(noteId, partial) {
   const ref = userNotesRef();
   if (!ref || !noteId) return false;
   try {
-    await ref.doc(noteId).update(partial);
+    await updateFirestoreNote(ref, noteId, partial);
     return true;
   } catch (e) {
     const code = e && (e.code || '');
@@ -518,7 +606,7 @@ async function updateNoteOrderFS(orderedIds) {
   if (!ref) return;
   const batch = db.batch();
   orderedIds.forEach((id, sortIndex) => {
-    batch.update(ref.doc(id), { sortOrder: sortIndex });
+    batch.update(ref.doc(id), stripFirestoreNotePayloads({ sortOrder: sortIndex }));
   });
   await batch.commit();
 }
@@ -610,10 +698,6 @@ async function syncNotesOnLogin() {
           console.warn('[sync] skipping ghost note from Firestore:', fsNote.id);
           continue;
         }
-        if (!fsNote.notesHtml && fsNote.notesText) fsNote.notesHtml = renderMarkdown(fsNote.notesText);
-        if (fsNote.slideImageUrls && !fsNote.extractedImages) {
-          fsNote.extractedImages = fsNote.slideImageUrls.map((url, i) => url ? { slideNumber: i + 1, imageBase64: url, mimeType: 'url' } : null).filter(Boolean);
-        }
         await saveNote(fsNote);
       }
     }
@@ -643,7 +727,10 @@ async function syncNotesOnLogin() {
       const fsTime = fsNote.updatedAt || '';
       const localTime = local.updatedAt || '';
       if (fsTime > localTime) {
-        const merged = Object.assign({}, fsNote, { slideImages: local.slideImages, notesHtml: local.notesHtml, extractedImages: local.extractedImages });
+        const merged = Object.assign({}, fsNote);
+        if (typeof local.notesHtml === 'string') {
+          merged.notesHtml = _mergeMarkerImageNodes(fsNote.notesHtml, local.notesHtml);
+        }
         await saveNote(merged);
       } else if (localTime > fsTime) {
         // HOTFIX: disabled to prevent ghost note resurrection
@@ -678,15 +765,6 @@ async function syncNotesOnLogin() {
       console.warn('Quiz results sync failed (non-critical):', e);
     }
 
-    // 6. Convert slideImageUrls for any local note missing extractedImages
-    const allLocal = await getAllNotes();
-    for (const note of allLocal) {
-      if (note.slideImageUrls && !note.extractedImages) {
-        note.extractedImages = note.slideImageUrls.map((url, i) => url ? { slideNumber: i + 1, imageBase64: url, mimeType: 'url' } : null).filter(Boolean);
-        await saveNote(note);
-      }
-    }
-
     sessionStorage.setItem('synced_' + currentUser.uid, 'true');
   } catch (e) {
     console.error('Sync error:', e);
@@ -697,41 +775,35 @@ async function syncNotesOnLogin() {
 
 async function uploadSlideImages(noteId, slideImages) {
   if (!currentUser || !slideImages || !slideImages.length) return [];
-  const urls = [];
+  const urls = new Array(slideImages.length);
   for (let i = 0; i < slideImages.length; i++) {
+    if (!(i in slideImages)) continue;
     const img = slideImages[i];
-    if (!img) { urls.push(null); continue; }
-    // If already a storage URL, keep it
-    if (typeof img === 'string' && img.startsWith('https://')) { urls.push(img); continue; }
-    // Upload base64 to Firebase Storage
+    if (!img) {
+      urls[i] = img;
+      continue;
+    }
+    const source = _syncImageSource(img);
+    if (source && source.kind === 'remote') {
+      urls[i] = source.value;
+      continue;
+    }
     const path = 'users/' + currentUser.uid + '/notes/' + noteId + '/slide_' + i + '.png';
     const ref = storage.ref(path);
-    try {
-      let data, contentType = 'image/png';
-      if (typeof img === 'object' && img.imageBase64) {
-        if (img.mimeType === 'url' && typeof img.imageBase64 === 'string' && img.imageBase64.startsWith('https://')) {
-          urls.push(img.imageBase64);
-          continue;
-        }
-        data = img.imageBase64;
-        contentType = img.mimeType || 'image/png';
-      } else if (typeof img === 'string' && img.includes('base64,')) {
-        data = img.split('base64,')[1];
-      } else if (typeof img === 'string') {
-        data = img;
-      } else {
-        urls.push(null); continue;
-      }
-      // Convert base64url → standard base64 before upload
+    let data;
+    const contentType = source?.mimeType || img.mimeType || 'image/png';
+    if (source?.representation === 'blob') {
+      if (typeof ref.put !== 'function') throw new Error('Storage fixture cannot upload Blob images');
+      await ref.put(source.blob, { contentType });
+    } else {
+      data = source?.value || (typeof img === 'object' ? img.imageBase64 : img);
+      if (typeof data !== 'string') throw new Error('Unsupported local image payload');
+      if (data.includes('base64,')) data = data.split('base64,')[1];
       data = data.replace(/-/g, '+').replace(/_/g, '/');
       if (data.length % 4) data += '='.repeat(4 - (data.length % 4));
       await ref.putString(data, 'base64', { contentType });
-      const url = await ref.getDownloadURL();
-      urls.push(url);
-    } catch (e) {
-      console.error('Slide upload error:', i, e);
-      urls.push(null);
     }
+    urls[i] = await ref.getDownloadURL();
   }
   return urls;
 }

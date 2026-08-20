@@ -591,12 +591,11 @@ function showImportNoteModal() {
         };
         const saveResult = await saveNote(note);
         showImageDegradationWarning(saveResult);
-        const ref = userNotesRef();
-        if (ref) {
-          const updatedAt = new Date().toISOString();
-          ref.doc(id).set({ id, title: s.title, notesText: s.plainText, createdAt: now, source: 'import', folderId: null, updatedAt }, { merge: true })
-            .catch(e => console.warn('import Firestore sync failed:', e));
-        }
+        const updatedAt = new Date().toISOString();
+        safeNotePartialUpdate(id, {
+          id, title: s.title, notesText: s.plainText, createdAt: now,
+          source: 'import', folderId: null, updatedAt,
+        }).catch(e => console.warn('import Firestore sync failed:', e));
       }
       showToast(`📥 ${checked.length}개 노트 저장 완료`);
       overlay.remove();
