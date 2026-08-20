@@ -141,6 +141,49 @@ Verification commands and exact results:
 
 ### Commit
 
+Implementation commit SHA: `f9e6a233fd222fedf34ced4330ecb0e949866d91`.
+
+### Concerns
+
+- Live verification was intentionally omitted; `verify.sh` was run without `--live`.
+- No billing files were changed.
+- Protected unrelated paths, plans/spec documents, and `public/img/` remain outside the task scope.
+
+## Fix Round 3/5
+
+### RED
+
+The first round-3 legacy canonical regression stopped at the malformed primitive bypass:
+
+```text
+node scripts/test_storage2_lifecycle.js
+```
+
+```text
+AssertionError [ERR_ASSERTION]: legacy malformed canonical primitive must reject before any folder/note write
+actual: 1
+expected: 0
+```
+
+The same RED fixture set also covered nested canonical aliases, non-`img` HTML payloads, remote HTML marker collisions for extracted/slide owners, and direct normalizer preservation of remote `src` values.
+
+### GREEN
+
+Round 3 now validates legacy canonical array topology and direct source forms, rejects nested aliases and malformed primitives, checks persisted legacy HTML after the real non-mutating detach/strip path, tracks HTML marker source type, rejects portable collisions with remote markers, and only fills missing/empty HTML placeholder sources during normalization.
+
+Verification commands and exact results:
+
+- `node --check public/js/storage.js; node --check public/js/notes_crud.js; node --check public/js/firestore_sync.js; node --check scripts/test_storage2_lifecycle.js; node --check scripts/test_storage2_sync.js; node --check scripts/test_storage2_browser.mjs; node --check scripts/test_storage2_task4_ui.js` — exit 0.
+- `node scripts/test_storage2_lifecycle.js` — `STORAGE2 lifecycle: PASS`.
+- `node scripts/test_note_images.js` — `note images: 8 checks passed`.
+- `node scripts/test_storage2_task4_ui.js` — `STORAGE2 Task 4 UI: GREEN contract checks passed`.
+- `node scripts/test_storage2_sync.js` — `STORAGE2 sync: PASS`.
+- `node scripts/test_storage2_browser.mjs` — `STORAGE2 Chromium IndexedDB: PASS`.
+- `C:\Program Files\Git\bin\bash.exe -lc 'export PATH=/usr/bin:/bin:/mingw64/bin:$PATH; ./scripts/verify.sh'` — `ALL GREEN`; 59 JS files checked, cache version `storage2task6r4`, live smoke omitted.
+- `git diff --check` — exit 0.
+
+### Commit
+
 Implementation commit SHA: `pending until the scoped commit is created`.
 
 ### Concerns

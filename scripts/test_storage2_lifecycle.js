@@ -216,6 +216,23 @@ async function run() {
   });
   assert.equal(importCalls.length, 4, 'legacy title-only and body-only notes remain compatible');
 
+  const directLegacyPlan = context._buildImportPlan({ notes: [{
+    id: 'legacy-direct-sources', title: 'Direct sources', notesText: 'Supported direct inputs',
+    extractedImages: [remote],
+    slideImages: [png],
+  }] });
+  assert.equal(directLegacyPlan.notes[0].note.extractedImages[0], remote,
+    'legacy direct remote string remains supported');
+  assert.equal(directLegacyPlan.notes[0].note.slideImages[0], png,
+    'legacy direct data URL remains supported');
+  const directLegacyBlob = new context.Blob(['legacy direct blob'], { type: 'image/png' });
+  const directBlobPlan = context._buildImportPlan({ notes: [{
+    id: 'legacy-direct-blob', title: 'Direct Blob', notesText: 'Supported direct Blob',
+    extractedImages: [directLegacyBlob],
+  }] });
+  assert.equal(directBlobPlan.notes[0].note.extractedImages[0], directLegacyBlob,
+    'legacy direct Blob remains supported');
+
   const detachedRoundTrip = context.detachNoteImages({
     id: 'byte-round-trip',
     title: 'Byte round trip',
@@ -298,6 +315,37 @@ async function run() {
     exportedMetadata: { cover: { imageBase64: png } },
     notes: [{ note: { id: 'top-level-extra', title: 'Top extra', notesText: 'Must reject' }, images: [] }],
   }, 'v2 top-level nested image alias');
+  await assertRejectedImport({ notes: [{
+    id: 'legacy-malformed-primitive', title: 'Legacy malformed', notesText: 'Must reject',
+    extractedImages: [42],
+  }] }, 'legacy malformed canonical primitive');
+  await assertRejectedImport({ notes: [{
+    id: 'legacy-nested-canonical-alias', title: 'Legacy nested alias', notesText: 'Must reject',
+    extractedImages: [{ metadata: { imageBase64: png } }],
+  }] }, 'legacy nested canonical image alias');
+  await assertRejectedImport({ notes: [{
+    id: 'legacy-non-img-html-payload', title: 'Legacy HTML payload', notesText: 'Must reject',
+    notesHtml: '<p data-image="data:image/png;base64,iVBORw0KGgo=">text</p>',
+  }] }, 'legacy non-img HTML payload');
+
+  const remoteMarkerNote = {
+    id: 'remote-marker-collision', title: 'Remote marker', notesText: 'Remote source',
+    notesHtml: '<img src="https://cdn.example.test/remote.png" data-note-image-ref="note-image-7">',
+  };
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: remoteMarkerNote,
+    images: [{ field: 'extractedImages', index: 0, markerId: 'note-image-7', mimeType: 'image/png', dataUrl: png }],
+  }] }, 'remote HTML marker extracted owner collision');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: remoteMarkerNote,
+    images: [{ field: 'slideImages', index: 0, markerId: 'note-image-7', mimeType: 'image/png', dataUrl: png }],
+  }] }, 'remote HTML marker slide owner collision');
+  const normalisedRemoteMarker = context._normaliseImportedNote({
+    note: remoteMarkerNote,
+    images: [{ field: 'extractedImages', index: 0, markerId: 'note-image-7', mimeType: 'image/png', dataUrl: png }],
+  });
+  assert.match(normalisedRemoteMarker.notesHtml, /src="https:\/\/cdn\.example\.test\/remote\.png"/,
+    'normalization must never replace a remote HTML source');
 
   const remoteHtmlPlan = context._buildImportPlan({
     schema: 'notyx.storage2', version: 2, folders: [], notes: [{

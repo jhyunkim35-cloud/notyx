@@ -767,6 +767,7 @@ function _htmlImageMarkersAndSources(html) {
       const current = markers.get(marker) || { count: 0, requiresOwner: false };
       current.count += 1;
       current.requiresOwner = current.requiresOwner || !source;
+      current.sourceType = current.sourceType || (source ? 'remote' : 'placeholder');
       markers.set(marker, current);
     }
     return whole;
@@ -835,6 +836,10 @@ function _validatePortableImages(images, htmlMarkers) {
       if (!noteImageMarkerIsStable(image.markerId)) _importReject('portable image marker is invalid');
       if (markers.has(image.markerId)) _importReject('duplicate portable image marker');
       markers.add(image.markerId);
+      const markerInfo = htmlMarkers.get(image.markerId);
+      if (markerInfo?.sourceType === 'remote') {
+        _importReject('portable image marker collides with a remote HTML source');
+      }
     }
     if (image.field === 'html') {
       if (!noteImageMarkerIsStable(image.markerId)) _importReject('HTML portable image needs a stable marker');
@@ -856,28 +861,98 @@ function _validatePortableImages(images, htmlMarkers) {
   }
 }
 
-function _validateLegacyPayloadValue(value, label, seen = new Set()) {
+const _LEGACY_DIRECT_SOURCE_KEYS = new Set([
+  'imageBase64', 'src', 'data', 'blob', 'payload', 'base64', 'imageData',
+]);
+
+function _validateLegacyDirectSource(value, mimeType, label) {
+  if (noteImageIsBlob(value)) return;
+  if (typeof value !== 'string') _importReject(label + ' must be a supported image source');
+  if (isRemoteImageSource(value) || noteImageLooksLikeRawBase64(value, mimeType)) return;
+  if (isDataImageSource(value)) {
+    try {
+      if (dataUrlToBlob(value).size > 0) return;
+    } catch (error) {
+      // Fall through to the common validation error.
+    }
+  }
+  _importReject(label + ' must be a supported image source');
+}
+
+function _validateLegacyNestedMetadata(value, label, seen = new Set()) {
   if (value === null || value === undefined) return;
-  if (noteImageIsBlob(value)) _importReject(label + ' contains a Blob payload');
+  if (noteImageIsBlob(value)) _importReject(label + ' contains a nested Blob payload');
+  if (typeof value === 'string') {
+    if (isDataImageSource(value) || noteImageInferMimeFromRawBase64(value)) {
+      _importReject(label + ' contains a nested image payload');
+    }
+    return;
+  }
   if (typeof value !== 'object') return;
   if (seen.has(value)) return;
   seen.add(value);
   if (Array.isArray(value)) {
-    value.forEach((entry, index) => _validateLegacyPayloadValue(entry, label + '[' + index + ']', seen));
+    value.forEach((entry, index) => _validateLegacyNestedMetadata(entry, label + '[' + index + ']', seen));
     return;
   }
-  Object.entries(value).forEach(([key, child]) => _validateLegacyPayloadValue(child, label + '.' + key, seen));
+  for (const [key, child] of Object.entries(value)) {
+    if (_IMPORT_IMAGE_PAYLOAD_KEYS.has(key)) _importReject(label + '.' + key + ' is a nested image payload alias');
+    _validateLegacyNestedMetadata(child, label + '.' + key, seen);
+  }
+}
+
+function _validateLegacyCanonicalEntry(entry, label) {
+  if (typeof entry === 'string' || noteImageIsBlob(entry)) {
+    _validateLegacyDirectSource(entry, '', label);
+    return;
+  }
+  if (!noteImageIsPlainObject(entry)) _importReject(label + ' must be a direct source or plain metadata object');
+  for (const [key, value] of Object.entries(entry)) {
+    if (_LEGACY_DIRECT_SOURCE_KEYS.has(key)) {
+      if (value === null || value === undefined || value === '') continue;
+      _validateLegacyDirectSource(value, entry.mimeType, label + '.' + key);
+    } else {
+      _validateLegacyNestedMetadata(value, label + '.' + key);
+    }
+  }
+}
+
+function _validateLegacyCanonicalArray(value, label) {
+  if (!Array.isArray(value)) _importReject(label + ' must be an array');
+  for (let index = 0; index < value.length; index++) {
+    if (!(index in value)) continue;
+    const entry = value[index];
+    if (entry === null || entry === undefined) continue;
+    _validateLegacyCanonicalEntry(entry, label + '[' + index + ']');
+  }
+}
+
+function _rejectPersistedHtmlPayloads(html, label) {
+  const source = String(html || '');
+  if (/data:image\/[^;\s,]+(?:;[^,]*)?,/i.test(source)) {
+    _importReject(label + ' contains an image data URL outside an img source');
+  }
+  const quotedValues = [...source.matchAll(/=\s*(["'])([\s\S]*?)\1/g)].map(match => match[2]);
+  const unquotedValues = [...source.matchAll(/=\s*([^\s>]+)/g)].map(match => match[1]);
+  for (const value of [...quotedValues, ...unquotedValues]) {
+    if (noteImageInferMimeFromRawBase64(value)) _importReject(label + ' contains a raw image payload');
+  }
+  const tokens = source.match(/[A-Za-z0-9+/]{12,}={0,2}/g) || [];
+  if (tokens.some(token => noteImageInferMimeFromRawBase64(token))) {
+    _importReject(label + ' contains a raw image payload');
+  }
 }
 
 function _validateLegacyImportPayloadAliases(note, label) {
   for (const [key, value] of Object.entries(note)) {
     if (key === 'notesHtml') {
       if (typeof value !== 'string') _importReject(label + ' notesHtml must be a string');
+      const strippedHtml = stripNoteImagePayloads(note).notesHtml;
+      _rejectPersistedHtmlPayloads(strippedHtml, label + '.notesHtml');
       continue;
     }
     if (key === 'extractedImages' || key === 'slideImages') {
-      if (!Array.isArray(value)) _importReject(label + ' ' + key + ' must be an array');
-      _validateLegacyPayloadValue(value, label + '.' + key);
+      _validateLegacyCanonicalArray(value, label + '.' + key);
       continue;
     }
     if (key === 'slideImageUrls') {
@@ -975,7 +1050,10 @@ function _normaliseImportedNote(bundle) {
         const markerMatch = /data-note-image-ref\s*=\s*(?:(["'])([^"']+)\1|([^\s>]+))/i.exec(whole);
         const foundMarker = markerMatch ? (markerMatch[2] !== undefined ? markerMatch[2] : markerMatch[3]) : '';
         if (foundMarker !== marker) return whole;
-        if (/\bsrc\s*=\s*/i.test(whole)) {
+        const sourceMatch = /\bsrc\s*=\s*(?:(["'])([\s\S]*?)\1|([^\s>]+))/i.exec(whole);
+        const currentSource = sourceMatch ? (sourceMatch[2] !== undefined ? sourceMatch[2] : sourceMatch[3]) : '';
+        if (sourceMatch && currentSource.trim()) return whole;
+        if (sourceMatch) {
           return whole.replace(/\bsrc\s*=\s*(?:(["'])[^"']*\1|[^\s>]+)/i, 'src="' + dataUrl + '"');
         }
         return whole.replace(/>$/, ' src="' + dataUrl + '">');
