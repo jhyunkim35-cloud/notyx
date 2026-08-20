@@ -287,7 +287,7 @@ try {
         index: 0,
         mimeType: 'image/png',
         sourceKey: 'imageBase64',
-        _sourceSignature: 'data:image/png:iVBORw0KGgo=',
+        _sourceSignature: 'v1:12:8e378466bc31fe16',
         markerId: 'note-image-0',
         blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
       }],
@@ -302,7 +302,7 @@ try {
           index: 0,
           mimeType: 'image/png',
           sourceKey: 'imageBase64',
-          _sourceSignature: 'data:image/png:iVBORw0KGgo=',
+          _sourceSignature: 'v1:12:8e378466bc31fe16',
           markerId: 'note-image-0',
           blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
         },
@@ -313,7 +313,7 @@ try {
           index: 0,
           mimeType: 'image/jpeg',
           sourceKey: 'imageBase64',
-          _sourceSignature: 'data:image/jpeg:/9j/',
+          _sourceSignature: 'v1:4:56c4835cc4f27fb7',
           markerId: 'note-image-1',
           blob: { type: 'image/jpeg', size: 3, bytes: [255, 216, 255] },
         },
@@ -322,7 +322,7 @@ try {
           index: 0,
           mimeType: 'image/png',
           sourceKey: 'imageBase64',
-          _sourceSignature: 'data:image/png:iVBORw0KGgo=',
+          _sourceSignature: 'v1:12:8e378466bc31fe16',
           markerId: 'note-image-2',
           blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
         },
@@ -333,6 +333,18 @@ try {
   assert.deepEqual(snapshot.first.imageRecords, expectedImageRecords, 'every detached image record must match exactly');
   assert.deepEqual(snapshot.first.imageRecords, snapshot.reopened.imageRecords,
     'complete imageRecords snapshot must survive close/reopen');
+  const persistedSignatures = snapshot.first.imageRecords.flatMap(record => record.images.map(image => image._sourceSignature));
+  assert.equal(persistedSignatures.every(signature => typeof signature === 'string' && signature.length <= 64), true,
+    'Chrome-persisted ownership fingerprints must stay within the compact size cap');
+  assert.equal(persistedSignatures.some(signature => /data:image/i.test(signature)), false,
+    'Chrome-persisted ownership fingerprints must not contain a data URL prefix');
+  assert.equal(persistedSignatures.some(signature => /iVBORw0KGgo=|\/9j\//.test(signature)), false,
+    'Chrome-persisted ownership fingerprints must not contain source base64');
+  assert.notEqual(
+    payloadImages.images.find(image => image.mimeType === 'image/png')._sourceSignature,
+    payloadImages.images.find(image => image.mimeType === 'image/jpeg')._sourceSignature,
+    'Chrome fingerprints must distinguish the PNG/JPEG collision fixtures',
+  );
   assert.deepEqual(payloadImages.images.map(image => [image.field, image.index, image.slideNumber, image.mimeType, image.markerId, image.blob]), [
     ['extractedImages', 0, 2, 'image/png', 'note-image-0', { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] }],
     ['slideImages', 0, 2, 'image/jpeg', 'note-image-1', { type: 'image/jpeg', size: 3, bytes: [255, 216, 255] }],
@@ -407,8 +419,8 @@ try {
   });
   const collisionRecord = await page.evaluate(() => window.__storage2ReadImageRecord('task4-marker-collision'));
   assert.deepEqual(collisionRecord.images.map(image => [image.field, image.markerId, image._sourceSignature]), [
-    ['html', 'note-image-0', 'data:image/png:iVBORw0KGgo='],
-    ['extractedImages', 'note-image-1', 'data:image/jpeg:/9j/'],
+    ['html', 'note-image-0', 'v1:12:8e378466bc31fe16'],
+    ['extractedImages', 'note-image-1', 'v1:4:56c4835cc4f27fb7'],
   ], 'marker collision keeps the old HTML owner and allocates a new extracted marker');
   const collisionOpen = await page.evaluate(() => getNote('task4-marker-collision'));
   assert.match(collisionOpen.notesHtml, /data:image\/png;base64,iVBORw0KGgo=/);

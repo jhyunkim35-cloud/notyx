@@ -220,6 +220,18 @@ async function run() {
   assert.equal(collisionOwners.filter(image => image.field === 'slideImages').length, 1);
   assert.equal(new Set(collisionOwners.map(image => image.markerId)).size, collisionOwners.length,
     'different payloads must never share a marker');
+  const collisionSignatures = collisionOwners.map(image => image._sourceSignature);
+  assert.equal(collisionSignatures.every(signature => typeof signature === 'string' && signature.length <= 64), true,
+    'persisted ownership fingerprints must stay within the compact size cap');
+  assert.equal(collisionSignatures.some(signature => /data:image/i.test(signature)), false,
+    'persisted ownership fingerprints must not include a data URL prefix');
+  assert.equal(collisionSignatures.some(signature => /iVBORw0KGgo=|\/9j\//.test(signature)), false,
+    'persisted ownership fingerprints must not include source base64');
+  assert.notEqual(
+    collisionOwners.find(image => image.field === 'extractedImages')._sourceSignature,
+    collisionOwners.find(image => image.field === 'slideImages')._sourceSignature,
+    'compact fingerprints must distinguish PNG and JPEG collision fixtures',
+  );
   assert.equal(collisionOwners.find(image => image.field === 'html').markerId, 'note-image-0',
     'the original HTML owner keeps marker zero');
   const collisionHydrated = await hydrateNoteImages(collisionNew.note, collisionNew.imageRecord);
@@ -230,6 +242,27 @@ async function run() {
   const collisionRepeated = detachNoteImages(collisionHydrated, collisionNew.imageRecord);
   assert.equal(collisionRepeated.imageRecord.images.length, collisionNew.imageRecord.images.length,
     'marker collision ownership must not grow on hydrated repeat saves');
+
+  const legacyRecord = {
+    noteId: 'legacy-signature',
+    images: [{
+      field: 'html',
+      index: 0,
+      markerId: 'note-image-0',
+      mimeType: 'image/png',
+      sourceKey: 'imageBase64',
+      _sourceSignature: 'data:image/png:iVBORw0KGgo=',
+      blob: dataUrlToBlob(PNG_DATA_URL),
+    }],
+  };
+  const migratedLegacy = detachNoteImages({
+    id: 'legacy-signature',
+    notesHtml: `<img src="${PNG_DATA_URL}" data-note-image-ref="note-image-0">`,
+  }, legacyRecord);
+  assert.equal(migratedLegacy.imageRecord.images.length, 1,
+    'legacy full signatures must still resolve the existing HTML owner');
+  assert.match(migratedLegacy.imageRecord.images[0]._sourceSignature, /^v1:\d+:[0-9a-f]{16}$/,
+    'legacy ownership signatures are compacted during migration');
 
   const sharedOwner = detachNoteImages({
     id: 'shared-owner',

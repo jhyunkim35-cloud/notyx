@@ -178,6 +178,38 @@ function noteImageSourceFromEntry(entry) {
   return null;
 }
 
+function noteImageCompactFingerprint(mimeType, payload, lengthValue) {
+  var text = String(mimeType || '').toLowerCase() + '\u0000' + String(payload || '');
+  var first = 2166136261;
+  var second = 0x9e3779b9;
+  for (var index = 0; index < text.length; index += 1) {
+    var code = text.charCodeAt(index);
+    first = Math.imul(first ^ code, 16777619);
+    second = Math.imul(second ^ (code + index), 2246822519);
+    second ^= second >>> 13;
+  }
+  return 'v1:' + String(lengthValue === undefined ? String(payload || '').length : lengthValue)
+    + ':' + (first >>> 0).toString(16).padStart(8, '0')
+    + (second >>> 0).toString(16).padStart(8, '0');
+}
+
+function noteImageCompactifySignature(signature) {
+  if (typeof signature !== 'string' || !signature) return signature;
+  if (/^v1:\d+:[0-9a-f]{16}$/.test(signature) && signature.length <= 64) return signature;
+  var dataMatch = /^data:([^:]+):(.*)$/.exec(signature);
+  if (dataMatch) {
+    var encoded = noteImageNormaliseBase64(dataMatch[2]);
+    return noteImageCompactFingerprint(dataMatch[1], encoded, encoded.length);
+  }
+  var blobMatch = /^blob:(\d+):(.*)$/.exec(signature);
+  if (blobMatch) return noteImageCompactFingerprint(blobMatch[2], 'blob:' + blobMatch[1], blobMatch[1]);
+  if (signature.indexOf('url:') === 0) {
+    var url = signature.slice(4);
+    return noteImageCompactFingerprint('url', url, url.length);
+  }
+  return noteImageCompactFingerprint('legacy', signature, signature.length);
+}
+
 function noteImageSourceInfo(entry) {
   var source = noteImageSourceFromEntry(entry);
   if (!source) return null;
@@ -187,7 +219,11 @@ function noteImageSourceInfo(entry) {
       blob: source.value,
       mimeType: source.value.type || source.mimeType || 'application/octet-stream',
       sourceKey: source.sourceKey,
-      signature: 'blob:' + source.value.size + ':' + source.value.type,
+      signature: noteImageCompactFingerprint(
+        source.value.type || source.mimeType || 'application/octet-stream',
+        'blob:' + source.value.size,
+        source.value.size,
+      ),
     };
   }
   if (typeof source.value !== 'string') return null;
@@ -199,7 +235,11 @@ function noteImageSourceInfo(entry) {
       blob: dataUrlToBlob(value),
       mimeType: parsed.mimeType,
       sourceKey: source.sourceKey,
-      signature: 'data:' + parsed.mimeType + ':' + noteImageNormaliseBase64(parsed.encoded),
+      signature: noteImageCompactFingerprint(
+        parsed.mimeType,
+        noteImageNormaliseBase64(parsed.encoded),
+        noteImageNormaliseBase64(parsed.encoded).length,
+      ),
     };
   }
   if (noteImageLooksLikeRawBase64(value, source.mimeType)) {
@@ -208,7 +248,11 @@ function noteImageSourceInfo(entry) {
       blob: dataUrlToBlob('data:' + source.mimeType + ';base64,' + value),
       mimeType: String(source.mimeType).toLowerCase(),
       sourceKey: source.sourceKey,
-      signature: 'data:' + String(source.mimeType).toLowerCase() + ':' + noteImageNormaliseBase64(value),
+      signature: noteImageCompactFingerprint(
+        String(source.mimeType).toLowerCase(),
+        noteImageNormaliseBase64(value),
+        noteImageNormaliseBase64(value).length,
+      ),
     };
   }
   if (isRemoteImageSource(value, source.mimeType)) {
@@ -216,7 +260,7 @@ function noteImageSourceInfo(entry) {
       kind: 'remote',
       value: value,
       sourceKey: source.sourceKey,
-      signature: 'url:' + value,
+      signature: noteImageCompactFingerprint('url', value, value.length),
     };
   }
   return null;
@@ -244,7 +288,9 @@ function noteImageRecordEntries(record) {
   return record.images.filter(function (entry) {
     return entry && typeof entry === 'object' && noteImageIsBlob(entry.blob);
   }).map(function (entry) {
-    return noteImageClone(entry);
+    var copy = noteImageClone(entry);
+    if (copy._sourceSignature) copy._sourceSignature = noteImageCompactifySignature(copy._sourceSignature);
+    return copy;
   });
 }
 
@@ -416,6 +462,9 @@ function noteImageKeepReferencedHtmlEntries(html, entries) {
 }
 
 function noteImageFinaliseRecord(entries, noteId) {
+  entries.forEach(function (entry) {
+    if (entry._sourceSignature) entry._sourceSignature = noteImageCompactifySignature(entry._sourceSignature);
+  });
   var usedMarkers = {};
   entries.forEach(function (entry) {
     if (noteImageMarkerIsStable(entry.markerId) && !usedMarkers[entry.markerId]) {
