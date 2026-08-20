@@ -29,11 +29,6 @@ function assertNoPayload(value, label) {
   }
 }
 
-function arrayTopology(value) {
-  if (!Array.isArray(value)) return null;
-  return Array.from({ length: value.length }, (_, index) => index in value);
-}
-
 function noteWithoutImageFields(note) {
   const copy = { ...note };
   delete copy.extractedImages;
@@ -58,6 +53,14 @@ async function captureSnapshot(page, { production = false, version = 5 } = {}) {
 
     function readAll(database, storeName) {
       return requestResult(database.transaction(storeName, 'readonly').objectStore(storeName).getAll());
+    }
+
+    function arrayTopology(value) {
+      if (!Array.isArray(value)) return null;
+      return {
+        length: value.length,
+        present: Array.from({ length: value.length }, (_, index) => index in value),
+      };
     }
 
     async function serializeImageRecord(record) {
@@ -98,6 +101,12 @@ async function captureSnapshot(page, { production = false, version = 5 } = {}) {
       const quizResults = stores.quizResults?.records || [];
       const srsCards = stores.srsCards?.records || [];
       const imageRecords = stores.noteImages?.records || [];
+      const noteTopologies = notes.map(note => ({
+        id: note.id,
+        extractedImages: arrayTopology(note.extractedImages),
+        slideImages: arrayTopology(note.slideImages),
+        slideImageUrls: arrayTopology(note.slideImageUrls),
+      }));
       return {
         version: database.version,
         storeNames,
@@ -108,6 +117,7 @@ async function captureSnapshot(page, { production = false, version = 5 } = {}) {
         folders,
         quizResults,
         srsCards,
+        noteTopologies,
       };
     }
 
@@ -157,6 +167,28 @@ try {
   assert.equal(legacy.first.version, 5);
   assert.deepEqual(legacy.first.storeNames, ['folders', 'notes', 'quizResults', 'srsCards']);
   assert.equal(legacy.first.stores.noteImages, undefined);
+  const expectedNoteTopologies = [
+    {
+      id: 'html-note',
+      extractedImages: null,
+      slideImages: null,
+      slideImageUrls: null,
+    },
+    {
+      id: 'payload-note',
+      extractedImages: { length: 3, present: [true, false, true] },
+      slideImages: { length: 3, present: [true, false, true] },
+      slideImageUrls: { length: 4, present: [true, true, false, true] },
+    },
+    {
+      id: 'url-note',
+      extractedImages: { length: 1, present: [true] },
+      slideImages: { length: 1, present: [true] },
+      slideImageUrls: { length: 1, present: [true] },
+    },
+  ];
+  assert.deepEqual(legacy.first.noteTopologies, expectedNoteTopologies,
+    'v5 array topology must be captured inside Chrome before Playwright serialization');
 
   const snapshot = await captureSnapshot(page, { production: true });
   assert.equal(snapshot.first.version, 6,
@@ -164,6 +196,10 @@ try {
   assert.equal(runtime.dbVersion, 6, 'fixture must use production DB_VERSION 6');
   assert.deepEqual(snapshot.first.storeNames, ['folders', 'noteImages', 'notes', 'quizResults', 'srsCards']);
   assert.deepEqual(snapshot.first, snapshot.reopened, 'close/reopen must preserve the complete v6 snapshot');
+  assert.deepEqual(snapshot.first.noteTopologies, expectedNoteTopologies,
+    'v6 array topology must be captured inside Chrome before Playwright serialization');
+  assert.deepEqual(snapshot.first.noteTopologies, snapshot.reopened.noteTopologies,
+    'close/reopen must preserve page-side array topology');
   assert.deepEqual(snapshot.timetable, legacy.timetable, 'independent timetable data must survive migration');
 
   const expectedIndexes = {
@@ -201,7 +237,6 @@ try {
     const after = afterNotes[index];
     assert.deepEqual(noteWithoutImageFields(after), noteWithoutImageFields(before), `${before.id} metadata must survive`);
     assert.deepEqual(after.slideImageUrls, before.slideImageUrls, `${before.id} slideImageUrls values must survive`);
-    assert.deepEqual(arrayTopology(after.slideImageUrls), arrayTopology(before.slideImageUrls), `${before.id} slideImageUrls topology must survive`);
   }
 
   const payloadNote = snapshot.first.notes.find(note => note.id === 'payload-note');
@@ -244,6 +279,56 @@ try {
 
   const payloadImages = snapshot.first.imageRecords.find(record => record.noteId === 'payload-note');
   const htmlImages = snapshot.first.imageRecords.find(record => record.noteId === 'html-note');
+  const expectedImageRecords = [
+    {
+      noteId: 'html-note',
+      images: [{
+        field: 'html',
+        index: 0,
+        mimeType: 'image/png',
+        sourceKey: 'imageBase64',
+        markerId: 'note-image-0',
+        blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
+      }],
+    },
+    {
+      noteId: 'payload-note',
+      images: [
+        {
+          slideNumber: 2,
+          fileName: 'slide-2.png',
+          field: 'extractedImages',
+          index: 0,
+          mimeType: 'image/png',
+          sourceKey: 'imageBase64',
+          markerId: 'note-image-0',
+          blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
+        },
+        {
+          slideNumber: 2,
+          fileName: 'slide-2-detail.jpg',
+          field: 'slideImages',
+          index: 0,
+          mimeType: 'image/jpeg',
+          sourceKey: 'imageBase64',
+          markerId: 'note-image-1',
+          blob: { type: 'image/jpeg', size: 3, bytes: [255, 216, 255] },
+        },
+        {
+          field: 'html',
+          index: 0,
+          mimeType: 'image/png',
+          sourceKey: 'imageBase64',
+          markerId: 'note-image-2',
+          blob: { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] },
+        },
+      ],
+    },
+  ];
+  assert.equal(snapshot.first.imageRecords.length, 2, 'exactly two notes must have detached image records');
+  assert.deepEqual(snapshot.first.imageRecords, expectedImageRecords, 'every detached image record must match exactly');
+  assert.deepEqual(snapshot.first.imageRecords, snapshot.reopened.imageRecords,
+    'complete imageRecords snapshot must survive close/reopen');
   assert.deepEqual(payloadImages.images.map(image => [image.field, image.index, image.slideNumber, image.mimeType, image.markerId, image.blob]), [
     ['extractedImages', 0, 2, 'image/png', 'note-image-0', { type: 'image/png', size: 8, bytes: [137, 80, 78, 71, 13, 10, 26, 10] }],
     ['slideImages', 0, 2, 'image/jpeg', 'note-image-1', { type: 'image/jpeg', size: 3, bytes: [255, 216, 255] }],
