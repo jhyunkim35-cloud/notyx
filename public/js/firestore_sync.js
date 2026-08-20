@@ -95,8 +95,9 @@ function _syncImagePlan(note) {
     .filter(field => Array.isArray(note && note[field]) && note[field].length > 0)
     .map(field => ({ field, entries: note[field] }));
   const unique = [];
-  const pathIndexes = [];
+  const pathNames = [];
   const owners = new Map();
+  const indexOwners = new Map();
   const references = [];
 
   for (const selection of selections) {
@@ -112,12 +113,17 @@ function _syncImagePlan(note) {
       if (!owners.has(key)) {
         owners.set(key, unique.length);
         unique.push(entry);
-        pathIndexes.push(index);
+        const priorOwner = indexOwners.get(index);
+        const ownerName = priorOwner
+          ? selection.field.replace(/Images$/, '') + '_' + index
+          : 'slide_' + index;
+        indexOwners.set(index, key);
+        pathNames.push(ownerName);
       }
       references.push({ field: selection.field, index, source, key });
     }
   }
-  return { selections, unique, pathIndexes, references, hasLocal: unique.length > 0 };
+  return { selections, unique, pathNames, references, hasLocal: unique.length > 0 };
 }
 
 function _syncRecordWithUploadedUrls(record, plan, urls) {
@@ -158,12 +164,13 @@ function _syncRecordWithUploadedUrls(record, plan, urls) {
       if (index in record.slideImageUrls) slideImageUrls[index] = record.slideImageUrls[index];
     }
   }
+  const canonicalUrls = new Map();
   for (const reference of plan.references) {
     const url = reference.key ? sourceUrls.get(reference.key) : reference.source?.value;
-    if (!url) continue;
-    if (reference.key || !(reference.index in slideImageUrls) || slideImageUrls[reference.index] == null) {
-      slideImageUrls[reference.index] = url;
-    }
+    if (url && !canonicalUrls.has(reference.index)) canonicalUrls.set(reference.index, url);
+  }
+  for (const [index, url] of canonicalUrls) {
+    slideImageUrls[index] = url;
   }
   merged.slideImageUrls = slideImageUrls;
   return merged;
@@ -180,6 +187,36 @@ function _syncVersionChanged(current, baseline) {
 async function _syncReadCurrentNote(id) {
   if (typeof getNote !== 'function') return null;
   try { return await getNote(id); } catch (e) { return null; }
+}
+
+const _noteSyncGenerations = new Map();
+const _noteRemoteCompletionQueues = new Map();
+
+function _beginNoteSyncGeneration(noteId) {
+  const generation = (_noteSyncGenerations.get(noteId) || 0) + 1;
+  _noteSyncGenerations.set(noteId, generation);
+  return generation;
+}
+
+function _isCurrentNoteSyncGeneration(noteId, generation) {
+  return _noteSyncGenerations.get(noteId) === generation;
+}
+
+function _enqueueNoteRemoteCompletion(noteId, generation, task) {
+  const previous = _noteRemoteCompletionQueues.get(noteId) || Promise.resolve();
+  const completion = previous.catch(() => {}).then(async () => {
+    if (!_isCurrentNoteSyncGeneration(noteId, generation)) {
+      return { stale: true, note: await _syncReadCurrentNote(noteId) };
+    }
+    await task();
+    return { stale: false };
+  });
+  _noteRemoteCompletionQueues.set(noteId, completion);
+  completion.then(
+    () => { if (_noteRemoteCompletionQueues.get(noteId) === completion) _noteRemoteCompletionQueues.delete(noteId); },
+    () => { if (_noteRemoteCompletionQueues.get(noteId) === completion) _noteRemoteCompletionQueues.delete(noteId); },
+  );
+  return completion;
 }
 
 async function saveNoteFS(note) {
@@ -204,6 +241,7 @@ async function saveNoteFS(note) {
   _invalidateNotesCache();
   const now = new Date().toISOString();
   const id = note.id || uuidv4();
+  const generation = _beginNoteSyncGeneration(id);
   const record = Object.assign({ folderId: null, createdAt: now }, note, { id, updatedAt: now });
   const imagePlan = _syncImagePlan(record);
 
@@ -221,14 +259,20 @@ async function saveNoteFS(note) {
   try {
     if (ref) {
       if (imagePlan.hasLocal) {
-        const uploadedUrls = await uploadSlideImages(id, imagePlan.unique, imagePlan.pathIndexes);
+        const uploadedUrls = await uploadSlideImages(id, imagePlan.unique, imagePlan.pathNames);
         const currentBeforeCompletion = await _syncReadCurrentNote(id);
-        if (_syncVersionChanged(currentBeforeCompletion, firstLocalVersion)) return currentBeforeCompletion;
+        if (!_isCurrentNoteSyncGeneration(id, generation)
+          || _syncVersionChanged(currentBeforeCompletion, firstLocalVersion)) return currentBeforeCompletion;
         recordForRemote = _syncRecordWithUploadedUrls(record, imagePlan, uploadedUrls);
         // Replace detached local payloads only after every upload succeeds.
         localSaveResult = await saveNote(recordForRemote);
         const currentAfterLocalCompletion = await _syncReadCurrentNote(id);
-        if (_syncVersionChanged(currentAfterLocalCompletion, firstLocalVersion)) {
+        const secondLocalVersion = {
+          revision: localSaveResult?.revision ?? recordForRemote.revision,
+          updatedAt: localSaveResult?.updatedAt ?? recordForRemote.updatedAt,
+        };
+        if (!_isCurrentNoteSyncGeneration(id, generation)
+          || _syncVersionChanged(currentAfterLocalCompletion, secondLocalVersion)) {
           return currentAfterLocalCompletion;
         }
       }
@@ -250,7 +294,9 @@ async function saveNoteFS(note) {
         return Object.assign({}, recordForRemote, localSaveResult); // skip Firestore write, IndexedDB already saved
       }
 
-      await writeFirestoreNote(ref, id, toSave, { merge: true });
+      const completion = await _enqueueNoteRemoteCompletion(id, generation, () =>
+        writeFirestoreNote(ref, id, toSave, { merge: true }));
+      if (completion.stale) return completion.note || await _syncReadCurrentNote(id);
     }
   } catch (error) {
     throw _carryLocalImageDegradation(error, localSaveResult);
@@ -385,13 +431,32 @@ async function getAllNotesFS() {
     return _notesCache;
   }
   try {
+    // Take one lightweight local snapshot before the remote read. This keeps
+    // the metadata list path detached-aware without hydrating noteImages.
+    let localNotes = [];
+    if (typeof getAllNotes === 'function') {
+      try { localNotes = await getAllNotes(); } catch (e) { /* remote list still wins */ }
+    }
+    const localById = new Map(
+      (Array.isArray(localNotes) ? localNotes : [])
+        .filter(note => note && note.id)
+        .map(note => [note.id, note]),
+    );
     const snap = await ref.get();
     const notes = snap.docs.map(d => stripFirestoreNotePayloads(d.data()));
-    // Mirror through saveNote so its detached-image merge preserves any
-    // existing local marker HTML and noteImages ownership. The sanitized
-    // list record omits image fields, so this path never hydrates payloads.
     for (const note of notes) {
-      try { await saveNote(note); } catch (e) {
+      const local = localById.get(note.id);
+      const mirror = Object.assign({}, note);
+      if (local && local.notesText !== note.notesText) {
+        const remoteHtml = typeof renderMarkdown === 'function'
+          ? renderMarkdown(note.notesText || '')
+          : '';
+        mirror.notesHtml = _mergeMarkerImageNodes(remoteHtml, local.notesHtml);
+      } else {
+        // An unchanged remote body must not replace the local marker HTML.
+        delete mirror.notesHtml;
+      }
+      try { await saveNote(mirror); } catch (e) {
         console.warn('[getAllNotesFS] local metadata mirror failed:', note.id, e.message);
       }
     }
@@ -833,7 +898,7 @@ async function syncNotesOnLogin() {
 
 // getUserUsage, incrementUsage, canAnalyze, setPaidPlan moved to /js/payment.js
 
-async function uploadSlideImages(noteId, slideImages, pathIndexes) {
+async function uploadSlideImages(noteId, slideImages, pathNames) {
   if (!currentUser || !slideImages || !slideImages.length) return [];
   const urls = new Array(slideImages.length);
   for (let i = 0; i < slideImages.length; i++) {
@@ -848,10 +913,10 @@ async function uploadSlideImages(noteId, slideImages, pathIndexes) {
       urls[i] = source.value;
       continue;
     }
-    const storageIndex = Array.isArray(pathIndexes) && pathIndexes[i] !== undefined
-      ? pathIndexes[i]
-      : i;
-    const path = 'users/' + currentUser.uid + '/notes/' + noteId + '/slide_' + storageIndex + '.png';
+    const storageName = Array.isArray(pathNames) && pathNames[i] !== undefined
+      ? pathNames[i]
+      : 'slide_' + i;
+    const path = 'users/' + currentUser.uid + '/notes/' + noteId + '/' + storageName + '.png';
     const ref = storage.ref(path);
     let data;
     const contentType = source?.mimeType || img.mimeType || 'image/png';

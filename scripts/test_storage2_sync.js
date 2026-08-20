@@ -277,6 +277,60 @@ async function run() {
   assert.equal(writes.at(-1).payload.slideImageUrls[4], dualLocal.slideImageUrls[4]);
   assertNoFirestorePayload(writes.at(-1).payload, 'dual-alias Firestore write');
 
+  const collisionWrites = [];
+  const collisionUploaded = [];
+  makeFirestore(context, collisionWrites);
+  context.currentUser = { uid: 'sync-user' };
+  context.storage = makeStorage(collisionUploaded);
+  const collisionSave = { count: 0, current: null };
+  context.saveNote = async note => {
+    collisionSave.count += 1;
+    collisionSave.current = Object.assign({}, note, { updatedAt: `production-save-${collisionSave.count}` });
+    return collisionSave.current;
+  };
+  context.getNote = async () => collisionSave.current && Object.assign({}, collisionSave.current);
+  await context.saveNoteFS({
+    id: 'alias-collision',
+    title: 'Alias collision',
+    notesText: 'Distinct owners share one index.',
+    slideImages: [{ imageBase64: png, mimeType: 'image/png', fileName: 'slide-owner.png' }],
+    extractedImages: [{ imageBase64: jpeg, mimeType: 'image/jpeg', fileName: 'extracted-owner.jpg' }],
+    slideImageUrls: [null],
+  });
+  assert.equal(collisionUploaded.length, 2, 'same-index distinct owners upload separately');
+  assert.deepEqual(collisionUploaded.map(item => item.storagePath), [
+    'users/sync-user/notes/alias-collision/slide_0.png',
+    'users/sync-user/notes/alias-collision/extracted_0.png',
+  ]);
+  assert.notEqual(collisionSave.current.slideImages[0].imageBase64,
+    collisionSave.current.extractedImages[0].imageBase64);
+  assert.equal(collisionSave.current.slideImages[0].mimeType, 'image/png');
+  assert.equal(collisionSave.current.extractedImages[0].mimeType, 'image/jpeg');
+  assert.equal(collisionSave.current.slideImageUrls[0], collisionSave.current.slideImages[0].imageBase64,
+    'slideImages is canonical for conflicting slideImageUrls');
+  assert.equal(collisionWrites.at(-1).payload.slideImageUrls[0], collisionSave.current.slideImages[0].imageBase64);
+
+  const normalWrites = [];
+  const normalUploaded = [];
+  makeFirestore(context, normalWrites);
+  context.storage = makeStorage(normalUploaded);
+  const normalSave = { count: 0, current: null };
+  context.saveNote = async note => {
+    normalSave.count += 1;
+    normalSave.current = Object.assign({}, note, { updatedAt: `normal-save-${normalSave.count}` });
+    return normalSave.current;
+  };
+  context.getNote = async () => normalSave.current && Object.assign({}, normalSave.current);
+  await context.saveNoteFS({
+    id: 'normal-upload',
+    title: 'Normal upload',
+    notesText: 'A normal upload must reach Firestore.',
+    extractedImages: [{ imageBase64: png, mimeType: 'image/png' }],
+  });
+  assert.equal(normalUploaded.length, 1);
+  assert.equal(normalWrites.filter(write => write.method === 'set').length, 1,
+    'normal upload performs exactly one safe Firestore write');
+
   let releaseUpload;
   let uploadStarted;
   const raceWrites = [];
@@ -383,7 +437,9 @@ async function run() {
   let mirroredListResult;
   context.saveNote = async note => {
     listMirrors.push(note);
-    assertNoFirestorePayload(note, 'list local mirror');
+    assert.equal(note.extractedImages, undefined, 'list mirror omits extractedImages');
+    assert.equal(note.slideImages, undefined, 'list mirror omits slideImages');
+    assert.doesNotMatch(note.notesHtml || '', /data:image\//i, 'list marker HTML has no payload');
     mirroredListResult = Object.assign({}, priorMarkerNote, note);
     return mirroredListResult;
   };
@@ -409,6 +465,52 @@ async function run() {
     'one-note reads hydrate URL references');
   assert.equal(1 in hydratedOneNote.extractedImages, false,
     'one-note hydration preserves sparse positions');
+
+  const authorityWrites = [];
+  makeFirestore(context, authorityWrites, [{
+    id: 'authority-note',
+    title: 'Authority note',
+    notesText: 'New remote prose',
+    slideImageUrls: [remoteA],
+  }]);
+  context.currentUser = { uid: 'authority-user' };
+  context.getAllNotes = async () => [{
+    id: 'authority-note',
+    title: 'Authority note',
+    notesText: 'Old local prose',
+    notesHtml: '<p>Old local prose</p><img src="" data-note-image-ref="note-image-0">',
+  }];
+  context.renderMarkdown = text => `<p>${text}</p>`;
+  const authorityLocal = {
+    id: 'authority-note',
+    title: 'Authority note',
+    notesText: 'Old local prose',
+    notesHtml: '<p>Old local prose</p><img src="data:image/png;base64,iVBORw0KGgo=" data-note-image-ref="note-image-0">',
+    extractedImages: [{ imageBase64: 'iVBORw0KGgo=', mimeType: 'image/png', markerId: 'note-image-0' }],
+  };
+  context.getNote = async () => Object.assign({}, authorityLocal);
+  const authorityMirrors = [];
+  context.saveNote = async note => { authorityMirrors.push(note); return note; };
+  context._invalidateNotesCache();
+  const authorityList = await context.getAllNotesFS();
+  assert.equal(authorityList[0].notesHtml, undefined, 'authority list remains metadata-only');
+  assert.equal(authorityMirrors[0].notesText, 'New remote prose');
+  assert.match(authorityMirrors[0].notesHtml, /New remote prose/,
+    'list mirror renders newer remote prose');
+  assert.doesNotMatch(authorityMirrors[0].notesHtml, /Old local prose/,
+    'list mirror drops stale local prose');
+  assert.match(authorityMirrors[0].notesHtml, /data-note-image-ref="note-image-0"/,
+    'list mirror carries only local marker-bearing image nodes');
+  assert.doesNotMatch(authorityMirrors[0].notesHtml, /data:image\//i,
+    'list mirror HTML contains markers, not image payloads');
+  const authorityMirrorPayload = Object.assign({}, authorityMirrors[0]);
+  delete authorityMirrorPayload.notesHtml;
+  assertNoFirestorePayload(authorityMirrorPayload, 'authority local mirror');
+  const authorityOpened = await context.getNoteFS('authority-note');
+  assert.match(authorityOpened.notesHtml, /New remote prose/);
+  assert.doesNotMatch(authorityOpened.notesHtml, /Old local prose/);
+  assert.match(authorityOpened.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/,
+    'opening the note still hydrates the detached marker image');
 
   const writerWrites = [];
   context.currentUser = { uid: 'writer-user' };
