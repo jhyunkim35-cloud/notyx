@@ -7,8 +7,13 @@
 <body>
   <p>STORAGE2 IndexedDB fixture</p>
   <script>
-    const DB_NAME = 'meetingAppDB';
-    const DB_VERSION = 6;
+    window.firebase = {
+      initializeApp() {},
+      auth() { return { currentUser: null }; },
+      firestore() { return {}; },
+      storage() { return {}; },
+    };
+    window.__storage2ScriptOrder = ['fixture-helpers'];
 
     function uuidv4() {
       return 'fixture-id';
@@ -19,7 +24,6 @@
     }
 
     window.__storage2Fixture = {
-      dbName: DB_NAME,
       remoteUrl: 'https://cdn.example.test/slide-5.png',
       remoteUrlTwo: 'https://cdn.example.test/slide-7.png',
       pngBase64: 'iVBORw0KGgo=',
@@ -116,6 +120,7 @@
           createdAt: '2026-08-20T10:00:00.000Z',
           updatedAt: '2026-08-20T10:01:00.000Z',
           notesText: 'Local payloads and URL references.',
+          unknownMetadata: { source: 'v5-fixture', keep: true },
           extractedImages: [
             { slideNumber: 2, imageBase64: pngBase64, mimeType: 'image/png', fileName: 'slide-2.png' },
             ,
@@ -126,7 +131,7 @@
             ,
             { slideNumber: 5, imageBase64: remoteUrl, mimeType: 'url', fileName: 'slide-5.png' },
           ],
-          slideImageUrls: [null, remoteUrl, null, remoteUrlTwo],
+          slideImageUrls: [null, remoteUrl, , remoteUrlTwo],
           notesHtml: `<p>본문</p><img class="local" src="data:image/png;base64,${pngBase64}" alt="local"><img src="${remoteUrl}">`,
         },
         {
@@ -184,9 +189,20 @@
     }
 
     window.__createV5Fixture = createV5Fixture;
-    window.__storage2FixtureReady = true;
+  </script>
+  <script src="../../public/js/constants.js"></script>
+  <script>
+    window.__storage2ScriptOrder.push('constants');
+    window.__storage2ProductionConstantsLoaded = true;
   </script>
   <script src="../../public/js/note_images.js"></script>
+  <script>
+    window.__storage2ScriptOrder.push('note_images');
+  </script>
   <script src="../../public/js/storage.js"></script>
+  <script>
+    window.__storage2ScriptOrder.push('storage');
+    window.__storage2FixtureReady = true;
+  </script>
 </body>
 </html>
