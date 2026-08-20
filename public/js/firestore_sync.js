@@ -812,6 +812,9 @@ async function migrateLocalToFirestore() {
         ? await hasLocalNoteImageBlobs(note.id)
         : false;
       const source = hasLocalImages ? await getNote(note.id) : note;
+      if (hasLocalImages && (!source || typeof source !== 'object')) {
+        throw new Error('hydrated local note is missing');
+      }
       await saveNoteFS(source || note);
       ok++;
     } catch (e) {

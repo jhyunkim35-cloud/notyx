@@ -701,6 +701,9 @@ const _IMPORT_IMAGE_FIELDS = new Set(['html', 'extractedImages', 'slideImages'])
 const _IMPORT_IMAGE_METADATA_FIELDS = new Set([
   'markerId', 'mimeType', 'fileName', 'slideNumber', 'alt', 'width', 'height', 'sourceKey',
 ]);
+const _IMPORT_IMAGE_PAYLOAD_KEYS = new Set([
+  'dataUrl', 'dataURL', 'imageBase64', 'src', 'data', 'payload', 'base64', 'imageData', 'blob',
+]);
 
 function _importObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Blob);
@@ -727,33 +730,91 @@ function _validPortableImageDataUrl(value) {
   }
 }
 
-function _validateDetachedNote(note) {
-  if (!_importObject(note)) _importReject('v2 note must be an object');
-  if (Object.prototype.hasOwnProperty.call(note, 'images')) _importReject('v2 note cannot contain an image payload field');
-  for (const field of ['extractedImages', 'slideImages', 'slideImageUrls']) {
-    if (!Object.prototype.hasOwnProperty.call(note, field)) continue;
-    if (!Array.isArray(note[field])) _importReject(field + ' must be an array');
-    for (const entry of note[field]) {
-      if (!entry) continue;
-      if (noteImageIsBlob(entry)) _importReject('v2 note contains a Blob outside images[]');
-      const sources = typeof entry === 'string'
-        ? [entry]
-        : (typeof entry === 'object'
-          ? [entry.dataUrl, entry.imageBase64, entry.src, entry.data, entry.payload, entry.base64, entry.imageData, entry.blob]
-          : []);
-      for (const source of sources) {
-        if (noteImageIsBlob(source) || (source && !isRemoteImageSource(source, entry.mimeType))) {
-          _importReject('v2 note contains a local image payload outside images[]');
-        }
-      }
-    }
+function _validateV2MetadataValue(value, label, seen = new Set()) {
+  if (value === null || value === undefined) return;
+  if (noteImageIsBlob(value)) _importReject(label + ' contains a Blob payload');
+  if (typeof value === 'string') {
+    if (isDataImageSource(value)) _importReject(label + ' contains a local image data URL');
+    if (noteImageInferMimeFromRawBase64(value)) _importReject(label + ' contains a raw image payload');
+    return;
   }
-  if (typeof note.notesHtml === 'string' && new RegExp('data:image/', 'i').test(note.notesHtml)) {
-    _importReject('v2 note HTML must use image markers');
+  if (typeof value !== 'object') return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => _validateV2MetadataValue(entry, label + '[' + index + ']', seen));
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (_IMPORT_IMAGE_PAYLOAD_KEYS.has(key)) {
+      if (child === null || child === undefined) continue;
+      if (typeof child === 'string' && isRemoteImageSource(child)) continue;
+      _importReject(label + '.' + key + ' contains a local image payload');
+    }
+    _validateV2MetadataValue(child, label + '.' + key, seen);
   }
 }
 
-function _validatePortableImages(images, note) {
+function _htmlImageMarkersAndSources(html) {
+  const markers = new Map();
+  String(html).replace(/<img\b([^>]*)>/gi, (whole, attrs) => {
+    const sourceMatch = /\bsrc\s*=\s*(?:(['"])([\s\S]*?)\1|([^\s>]+))/i.exec(attrs);
+    const source = sourceMatch ? (sourceMatch[2] !== undefined ? sourceMatch[2] : sourceMatch[3]) : '';
+    if (source && !isRemoteImageSource(source)) _importReject('v2 note HTML contains a local image source');
+    const markerMatch = /\bdata-note-image-ref\s*=\s*(?:(['"])([^"']+)\1|([^\s>]+))/i.exec(attrs);
+    if (markerMatch) {
+      const marker = markerMatch[2] !== undefined ? markerMatch[2] : markerMatch[3];
+      const current = markers.get(marker) || { count: 0, requiresOwner: false };
+      current.count += 1;
+      current.requiresOwner = current.requiresOwner || !source;
+      markers.set(marker, current);
+    }
+    return whole;
+  });
+  return markers;
+}
+
+function _validateSlideImageUrls(value, label) {
+  if (!Array.isArray(value)) _importReject(label + ' must be an array');
+  for (let index = 0; index < value.length; index++) {
+    if (!(index in value)) continue;
+    const entry = value[index];
+    if (entry === null) continue;
+    if (typeof entry !== 'string' || !isRemoteImageSource(entry)) {
+      _importReject(label + ' entries must be null or remote URL strings');
+    }
+  }
+}
+
+function _validateDetachedNote(note) {
+  if (!_importObject(note)) _importReject('v2 note must be an object');
+  if (Object.prototype.hasOwnProperty.call(note, 'images')) _importReject('v2 note cannot contain an image payload field');
+  if (Object.prototype.hasOwnProperty.call(note, 'notesHtml') && typeof note.notesHtml !== 'string') {
+    _importReject('v2 notesHtml must be a string');
+  }
+  _validateV2MetadataValue(note, 'v2 note');
+  const htmlMarkers = typeof note.notesHtml === 'string'
+    ? _htmlImageMarkersAndSources(note.notesHtml)
+    : new Map();
+  for (const field of ['extractedImages', 'slideImages']) {
+    if (!Object.prototype.hasOwnProperty.call(note, field)) continue;
+    if (!Array.isArray(note[field])) _importReject(field + ' must be an array');
+    for (let index = 0; index < note[field].length; index++) {
+      if (!(index in note[field])) continue;
+      const entry = note[field][index];
+      if (entry === null || entry === undefined) continue;
+      if (!_importObject(entry)) _importReject(field + '[' + index + '] must be a metadata object');
+      if (!entry) continue;
+      if (noteImageIsBlob(entry)) _importReject('v2 note contains a Blob outside images[]');
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(note, 'slideImageUrls')) {
+    _validateSlideImageUrls(note.slideImageUrls, 'slideImageUrls');
+  }
+  return htmlMarkers;
+}
+
+function _validatePortableImages(images, htmlMarkers) {
   if (!Array.isArray(images)) _importReject('v2 images must be an array');
   const owners = new Set();
   const markers = new Set();
@@ -761,6 +822,11 @@ function _validatePortableImages(images, note) {
     if (!_importObject(image)) _importReject('portable image must be an object');
     if (!_IMPORT_IMAGE_FIELDS.has(image.field)) _importReject('unsupported portable image field');
     if (!Number.isSafeInteger(image.index) || image.index < 0) _importReject('portable image index must be nonnegative');
+    for (const key of _IMPORT_IMAGE_PAYLOAD_KEYS) {
+      if (key !== 'dataUrl' && Object.prototype.hasOwnProperty.call(image, key)) {
+        _importReject('portable image contains an unsupported payload alias');
+      }
+    }
     if (!_validPortableImageDataUrl(image.dataUrl)) _importReject('portable image dataUrl is invalid');
     const owner = image.field + ':' + image.index;
     if (owners.has(owner)) _importReject('duplicate portable image owner');
@@ -770,6 +836,55 @@ function _validatePortableImages(images, note) {
       if (markers.has(image.markerId)) _importReject('duplicate portable image marker');
       markers.add(image.markerId);
     }
+    if (image.field === 'html') {
+      if (!noteImageMarkerIsStable(image.markerId)) _importReject('HTML portable image needs a stable marker');
+      const markerInfo = htmlMarkers.get(image.markerId);
+      if (!markerInfo || markerInfo.count !== 1 || !markerInfo.requiresOwner) {
+        _importReject('HTML portable image marker must occur exactly once on a local placeholder');
+      }
+    }
+    for (const [key, value] of Object.entries(image)) {
+      if (key === 'dataUrl') continue;
+      _validateV2MetadataValue(value, 'portable image.' + key);
+    }
+  }
+  for (const [marker, markerInfo] of htmlMarkers) {
+    if (markerInfo.count !== 1) _importReject('HTML marker occurs more than once: ' + marker);
+    if (markerInfo.requiresOwner && !markers.has(marker)) {
+      _importReject('HTML marker has no portable image owner: ' + marker);
+    }
+  }
+}
+
+function _validateLegacyPayloadValue(value, label, seen = new Set()) {
+  if (value === null || value === undefined) return;
+  if (noteImageIsBlob(value)) _importReject(label + ' contains a Blob payload');
+  if (typeof value !== 'object') return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => _validateLegacyPayloadValue(entry, label + '[' + index + ']', seen));
+    return;
+  }
+  Object.entries(value).forEach(([key, child]) => _validateLegacyPayloadValue(child, label + '.' + key, seen));
+}
+
+function _validateLegacyImportPayloadAliases(note, label) {
+  for (const [key, value] of Object.entries(note)) {
+    if (key === 'notesHtml') {
+      if (typeof value !== 'string') _importReject(label + ' notesHtml must be a string');
+      continue;
+    }
+    if (key === 'extractedImages' || key === 'slideImages') {
+      if (!Array.isArray(value)) _importReject(label + ' ' + key + ' must be an array');
+      _validateLegacyPayloadValue(value, label + '.' + key);
+      continue;
+    }
+    if (key === 'slideImageUrls') {
+      _validateSlideImageUrls(value, label + '.slideImageUrls');
+      continue;
+    }
+    _validateV2MetadataValue(value, label + '.' + key);
   }
 }
 
@@ -781,7 +896,11 @@ function _validateImportNote(note, seenIds, label) {
   const body = typeof note.markdownContent === 'string'
     ? note.markdownContent.trim()
     : (typeof note.notesText === 'string' ? note.notesText.trim() : '');
+  if (Object.prototype.hasOwnProperty.call(note, 'notesHtml') && typeof note.notesHtml !== 'string') {
+    _importReject(label + ' notesHtml must be a string');
+  }
   if (!title && !body) _importReject(label + ' needs a title or body');
+  _validateLegacyImportPayloadAliases(note, label);
   seenIds.add(note.id);
 }
 
@@ -796,15 +915,25 @@ function _validateImportFolder(folder, seenIds) {
 function _buildImportPlan(data) {
   if (!_importObject(data)) _importReject('top-level value must be an object');
   const hasSchema = Object.prototype.hasOwnProperty.call(data, 'schema');
-  const isLegacy = !hasSchema;
+  const hasVersion = Object.prototype.hasOwnProperty.call(data, 'version');
+  if (hasSchema !== hasVersion) _importReject('schema and version must be declared together');
+  const isLegacy = !hasSchema && !hasVersion;
   if (!isLegacy && data.schema !== 'notyx.storage2') _importReject('unsupported schema');
   if (!isLegacy && data.version !== 2) _importReject('unsupported version');
   if (!Array.isArray(data.notes)) _importReject('notes must be an array');
+  const topLevelKeys = new Set(['schema', 'version', 'notes', 'folders', 'exportedAt']);
+  for (const [key, value] of Object.entries(data)) {
+    if (key === 'exportedAt') _validateV2MetadataValue(value, 'import.exportedAt');
+    else if (!topLevelKeys.has(key)) _validateV2MetadataValue(value, 'import.' + key);
+  }
   // Legacy exports historically omitted folders; only that schema-less shape defaults to [].
   const folders = data.folders === undefined && isLegacy ? [] : data.folders;
   if (!Array.isArray(folders)) _importReject('folders must be an array');
   const folderIds = new Set();
-  folders.forEach(folder => _validateImportFolder(folder, folderIds));
+  folders.forEach((folder, index) => {
+    _validateV2MetadataValue(folder, (isLegacy ? 'legacy' : 'v2') + ' folder ' + index);
+    _validateImportFolder(folder, folderIds);
+  });
   const noteIds = new Set();
   const notes = data.notes.map((bundle, index) => {
     if (isLegacy) {
@@ -814,8 +943,11 @@ function _buildImportPlan(data) {
     if (!_importObject(bundle) || !_importObject(bundle.note) || !Array.isArray(bundle.images)) {
       _importReject('v2 note bundle must contain note and images[]');
     }
-    _validateDetachedNote(bundle.note);
-    _validatePortableImages(bundle.images, bundle.note);
+    for (const [key, value] of Object.entries(bundle)) {
+      if (key !== 'note' && key !== 'images') _validateV2MetadataValue(value, 'v2 note bundle.' + key);
+    }
+    const htmlMarkers = _validateDetachedNote(bundle.note);
+    _validatePortableImages(bundle.images, htmlMarkers);
     _validateImportNote(bundle.note, noteIds, 'v2 note ' + index);
     return { note: _normaliseImportedNote(bundle), id: bundle.note.id };
   });

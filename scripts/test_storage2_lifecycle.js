@@ -250,6 +250,8 @@ async function run() {
     mimeType: 'image/png', dataUrl: png,
   };
   await assertRejectedImport({ schema: 'foreign.storage', version: 2, folders: [], notes: [] }, 'foreign schema');
+  await assertRejectedImport({ version: 2, folders: [], notes: [] }, 'version-only declaration');
+  await assertRejectedImport({ schema: 'notyx.storage2', folders: [], notes: [] }, 'schema-only declaration');
   await assertRejectedImport({ schema: 'notyx.storage2', version: 3, folders: [], notes: [] }, 'unsupported version');
   await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: {} }, 'malformed notes shape');
   await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [
@@ -264,6 +266,70 @@ async function run() {
   await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
     note: { ...validDetachedNote, slideImageUrls: [png] }, images: [],
   }] }, 'detached slideImageUrls data URL');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: { ...validDetachedNote, slideImageUrls: [{ url: remote }] }, images: [],
+  }] }, 'detached slideImageUrls object');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: { ...validDetachedNote, notesHtml: { html: 'not a string' } }, images: [],
+  }] }, 'non-string notesHtml');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: { ...validDetachedNote, cover: { imageBase64: png } }, images: [],
+  }] }, 'nested image alias');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: { ...validDetachedNote, cover: { mimeType: 'image/png', raw: 'iVBORw0KGgo=' } }, images: [],
+  }] }, 'nested raw image payload');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: { ...validDetachedNote, extractedImages: ['not canonical'] }, images: [],
+  }] }, 'malformed canonical image entry');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: validDetachedNote,
+    images: [{ ...validPortable, imageBase64: png }],
+  }] }, 'extra portable image alias');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: { ...validDetachedNote, notesHtml: '<img src="" data-note-image-ref="note-image-1">' },
+    images: [{ field: 'html', index: 0, markerId: 'note-image-0', mimeType: 'image/png', dataUrl: png }],
+  }] }, 'orphan HTML owner');
+  await assertRejectedImport({ notes: [{
+    id: 'legacy-nested-alias', title: 'Legacy nested alias', notesText: 'Must reject',
+    cover: { imageBase64: png },
+  }] }, 'legacy nested image alias');
+  await assertRejectedImport({
+    schema: 'notyx.storage2', version: 2, folders: [],
+    exportedMetadata: { cover: { imageBase64: png } },
+    notes: [{ note: { id: 'top-level-extra', title: 'Top extra', notesText: 'Must reject' }, images: [] }],
+  }, 'v2 top-level nested image alias');
+
+  const remoteHtmlPlan = context._buildImportPlan({
+    schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+      note: {
+        id: 'remote-html-note', title: 'Remote HTML', notesText: 'Remote body',
+        notesHtml: '<img src="https://cdn.example.test/remote.png" data-note-image-ref="note-image-9">',
+      },
+      images: [],
+    }],
+  });
+  assert.equal(remoteHtmlPlan.notes.length, 1, 'remote HTML marker without local owner remains valid v2 metadata');
+  context.saveNoteFS = async note => { importCalls.push(note); return note; };
+  await context.importNotes({
+    value: 'remote-html-import',
+    files: [{ text: async () => JSON.stringify({
+      schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+        note: {
+          id: 'remote-html-import', title: 'Remote HTML', notesText: 'Remote body',
+          notesHtml: '<img src="https://cdn.example.test/remote.png" data-note-image-ref="note-image-9">',
+        },
+        images: [],
+      }],
+    }) }],
+  });
+  assert.equal(importCalls.length, 5, 'remote HTML v2 import uses the real note writer');
+  assert.match(importCalls.at(-1).notesHtml, /https:\/\/cdn\.example\.test\/remote\.png/);
+
+  assert.throws(() => context._buildImportPlan({
+    schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+      note: { ...validDetachedNote, cover: { blob: new Blob(['local']) } }, images: [],
+    }],
+  }), /Blob|local image payload/, 'v2 import rejects Blob values before any write');
 
   const moveWrites = [];
   const moveHydrates = [];
@@ -326,6 +392,16 @@ async function run() {
   assert.deepEqual(migrationGets, ['local-image'], 'local-to-Firestore migration hydrates only confirmed local Blob owners');
   assert.deepEqual(migrationSaves.map(note => note.id), ['url-only', 'marker-without-blob', 'local-image']);
   assert.equal(localStore.get('fs_migrated_migration-user'), 'true', 'successful migration sets the retry flag');
+
+  const nullHydrationSaves = [];
+  context.currentUser = { uid: 'null-hydration-user' };
+  context.getAllNotes = async () => [{ id: 'null-hydration-note', title: 'Needs hydration', notesText: 'Body' }];
+  context.hasLocalNoteImageBlobs = async () => true;
+  context.getNote = async () => null;
+  context.saveNoteFS = async note => { nullHydrationSaves.push(note); };
+  await context.migrateLocalToFirestore();
+  assert.equal(nullHydrationSaves.length, 0, 'positive local-image probe must not save stale metadata after null hydration');
+  assert.equal(localStore.has('fs_migrated_null-hydration-user'), false, 'null hydration keeps retry flag unset');
 
   localStore.delete('fs_migrated_migration-retry-user');
   context.currentUser = { uid: 'migration-retry-user' };

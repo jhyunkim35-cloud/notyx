@@ -4,12 +4,17 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 async function run() {
+const harnessConsole = {
+  log() {},
+  warn(...args) { throw new Error(`unexpected console.warn: ${args.join(' ')}`); },
+  error(...args) { throw new Error(`unexpected console.error: ${args.join(' ')}`); },
+};
 const context = {
   Blob,
   atob,
   btoa,
   FileReader: undefined,
-  console,
+  console: harnessConsole,
   setTimeout,
   clearTimeout,
   window: { recorderLastAudioPath: null },
@@ -99,6 +104,11 @@ assert.equal(warnings.length, 2, 'finalize save consumes one additional degradat
 context.currentUser = { uid: 'path-user' };
 context.getNoteFS = async () => ({ id: 'move-note', title: '이동 노트', notesText: '본문', notesHtml: '' });
 context.getAllFoldersFS = async () => [];
+context.db = {
+  collection() {
+    return { doc() { return { collection() { return { get: async () => ({ docs: [] }) }; } }; } };
+  },
+};
 const moveRows = [];
 let createdElements = 0;
 context.document.createElement = () => {

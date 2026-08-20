@@ -374,6 +374,37 @@ try {
   assert.equal(localBlobProbe.trace.some(entry => entry.storeName === 'noteImages' && entry.operation === 'getAll'), false,
     'local Blob probe must not scan noteImages');
 
+  await page.addScriptTag({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'js', 'notes_crud.js') });
+  await page.evaluate(() => {
+    window.showSuccessToast = () => {};
+    window.showToast = message => { throw new Error(message); };
+    window.renderHomeView = async () => {};
+    window.getAllFoldersFS = async () => [];
+  });
+  await page.evaluate(async () => {
+    await importNotes({
+      value: 'real-idb-import',
+      files: [{ text: async () => JSON.stringify({
+        schema: 'notyx.storage2',
+        version: 2,
+        notes: [{
+          note: {
+            id: 'real-idb-import',
+            title: 'Real IDB import',
+            notesText: 'Portable bytes',
+            notesHtml: '<img src="" data-note-image-ref="note-image-0">',
+            extractedImages: [{ markerId: 'note-image-0', mimeType: 'image/png' }],
+          },
+          images: [{ field: 'extractedImages', index: 0, markerId: 'note-image-0', mimeType: 'image/png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }],
+        }],
+        folders: [],
+      }) }],
+    });
+  });
+  const importedImageRecord = await page.evaluate(() => window.__storage2ReadImageRecord('real-idb-import'));
+  assert.deepEqual(importedImageRecord.images.map(image => image.blob.bytes), [[137, 80, 78, 71, 13, 10, 26, 10]],
+    'production import through saveNoteFS must persist exact image bytes in noteImages');
+
   await page.evaluate(() => window.__storage2ResetIdbTrace());
   const hydratedPayloadNote = await page.evaluate(() => getNote('payload-note'));
   assert.match(hydratedPayloadNote.extractedImages[0].imageBase64, /^iVBORw0KGgo=/,

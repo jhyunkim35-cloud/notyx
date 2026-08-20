@@ -88,10 +88,63 @@ Verification commands and results:
 
 ### Commit
 
+Implementation commit SHA: `1561e14`.
+
+### Concerns
+
+- Live verification was intentionally omitted; `verify.sh` was run without `--live`.
+- The exact commit SHA is recorded above after the single scoped commit; the report-only SHA update is intentionally not amended into history.
+- No billing files were changed; protected unrelated paths and plans/spec documents remain outside the commit.
+
+## Fix Round 2/5
+
+### RED
+
+The first focused re-review fixtures reproduced the two pre-fix harness/production failures:
+
+```text
+node scripts/test_storage2_lifecycle.js
+```
+
+```text
+AssertionError [ERR_ASSERTION]: detached slideImageUrls object must reject before any folder/note write
+actual: 1
+expected: 0
+```
+
+With strict Task4 console handling enabled:
+
+```text
+node scripts/test_storage2_task4_ui.js
+```
+
+```text
+Error: unexpected console.warn: [moveSavedNote] metadata list failed, falling back to one-note read: ReferenceError: db is not defined
+```
+
+The first referential-integrity implementation also correctly failed the newly added remote-marker fixture, proving that an unconditional “every HTML marker needs an image owner” rule would reject valid remote HTML exports.
+
+### GREEN
+
+Round 2 now enforces paired schema/version declarations, recursive legacy/v2 payload rejection with canonical legacy exceptions, strict v2 top-level-extra scanning, canonical array shapes, strict `slideImageUrls`, portable alias rejection, local-placeholder HTML owner integrity, remote HTML marker preservation, null-hydration migration failure/retry behavior, and strict Task4 Firebase/IDB harness dependencies.
+
+Verification commands and exact results:
+
+- `node --check public/js/storage.js; node --check public/js/notes_crud.js; node --check public/js/firestore_sync.js; node --check scripts/test_storage2_lifecycle.js; node --check scripts/test_storage2_sync.js; node --check scripts/test_storage2_browser.mjs; node --check scripts/test_storage2_task4_ui.js` — exit 0.
+- `node scripts/test_storage2_lifecycle.js` — `STORAGE2 lifecycle: PASS`.
+- `node scripts/test_note_images.js` — `note images: 8 checks passed`.
+- `node scripts/test_storage2_task4_ui.js` — `STORAGE2 Task 4 UI: GREEN contract checks passed` with strict unexpected console.warn/error failure behavior.
+- `node scripts/test_storage2_sync.js` — `STORAGE2 sync: PASS`.
+- `node scripts/test_storage2_browser.mjs` — `STORAGE2 Chromium IndexedDB: PASS`; includes production import through `importNotes`/`saveNoteFS` and exact persisted PNG byte-array assertion.
+- `C:\Program Files\Git\bin\bash.exe -lc 'export PATH=/usr/bin:/bin:/mingw64/bin:$PATH; ./scripts/verify.sh'` — `ALL GREEN`; 59 JS files checked, cache version `storage2task6r3`, live smoke omitted.
+- `git diff --check` — exit 0.
+
+### Commit
+
 Implementation commit SHA: `pending until the scoped commit is created`.
 
 ### Concerns
 
 - Live verification was intentionally omitted; `verify.sh` was run without `--live`.
-- The report SHA will be filled with the exact post-commit SHA after the single scoped commit.
-- No billing files were changed; protected unrelated paths and plans/spec documents remain outside the commit.
+- No billing files were changed.
+- Protected unrelated paths, plans/spec documents, and `public/img/` remain outside the task scope.
