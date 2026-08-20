@@ -392,7 +392,15 @@ async function deleteNoteNow(id) {
    Move note to folder
 ═══════════════════════════════════════════════ */
 async function moveSavedNote(id) {
-  const [note, folders] = await Promise.all([getNoteFS(id), getAllFoldersFS()]);
+  let note = null;
+  try {
+    const notes = await getAllNotesFS();
+    note = notes.find(candidate => candidate && candidate.id === id) || null;
+  } catch (error) {
+    console.warn('[moveSavedNote] metadata list failed, falling back to one-note read:', error);
+  }
+  if (!note) note = await getNoteFS(id);
+  const folders = await getAllFoldersFS();
   if (!note) return;
 
   const overlay = document.createElement('div');
@@ -414,9 +422,17 @@ async function moveSavedNote(id) {
     row.className = 'db-modal-row';
     row.style.cursor = 'pointer';
     row.innerHTML = `<span>${folder.id ? '📁 ' : '📄 '}${escHtml(folder.name)}</span>`;
-    row.onclick = async () => {
-      const newSortOrder = await getNextSortOrder(folder.id, note.id);
-      const updated = Object.assign({}, note, { folderId: folder.id, sortOrder: newSortOrder });
+      row.onclick = async () => {
+        const newSortOrder = await getNextSortOrder(folder.id, note.id);
+      const updated = {
+        id: note.id,
+        title: note.title,
+        notesText: note.notesText,
+        markdownContent: note.markdownContent,
+        type: note.type,
+        folderId: folder.id,
+        sortOrder: newSortOrder,
+      };
       try {
         const saveResult = await saveNoteFS(updated);
         showImageDegradationWarning(saveResult);
@@ -639,15 +655,89 @@ async function renameSavedNote(id) {
 /* ═══════════════════════════════════════════════
    Export / Import
 ═══════════════════════════════════════════════ */
+function _exportImageMetadata(entry) {
+  const metadata = {};
+  for (const [key, value] of Object.entries(entry || {})) {
+    if (['blob', 'dataUrl', 'imageBase64', 'src', 'data', 'payload', 'base64', 'imageData'].includes(key)) continue;
+    metadata[key] = value;
+  }
+  return metadata;
+}
+
+async function _buildNoteExport(metadata) {
+  const hydrated = await getNoteFS(metadata.id);
+  const source = hydrated || metadata;
+  const detached = detachNoteImages(source);
+  const images = [];
+  for (const entry of detached.imageRecord.images) {
+    if (!entry || !entry.blob) continue;
+    images.push(Object.assign(_exportImageMetadata(entry), {
+      dataUrl: await blobToDataUrl(entry.blob),
+    }));
+  }
+  return { note: stripNoteImagePayloads(source), images };
+}
+
 async function exportAllNotes() {
   const [notes, folders] = await Promise.all([getAllNotesFS(), getAllFoldersFS()]);
-  const data = JSON.stringify({ notes, folders, exportedAt: new Date().toISOString() }, null, 2);
+  const exportedNotes = [];
+  for (const note of notes) exportedNotes.push(await _buildNoteExport(note));
+  const data = JSON.stringify({
+    schema: 'notyx.storage2',
+    version: 2,
+    notes: exportedNotes,
+    folders,
+    exportedAt: new Date().toISOString(),
+  }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = Object.assign(document.createElement('a'), { href: url, download: `meeting-notes-export-${dateStamp()}.json` });
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showSuccessToast('⬇ 내보내기 완료');
+}
+
+function _normaliseImportedNote(bundle) {
+  const source = bundle && bundle.note && typeof bundle.note === 'object' ? bundle.note : bundle;
+  const note = Object.assign({}, source || {});
+  const portableImages = Array.isArray(bundle?.images)
+    ? bundle.images
+    : (Array.isArray(bundle?.imageRecord?.images) ? bundle.imageRecord.images : []);
+  delete note.note;
+  delete note.images;
+  delete note.imageRecord;
+  for (const image of portableImages) {
+    if (!image || !image.field || !Number.isInteger(image.index)) continue;
+    const dataUrl = image.dataUrl || image.dataURL || image.imageBase64;
+    if (typeof dataUrl !== 'string' || !dataUrl) continue;
+    const marker = image.markerId;
+    if (marker && typeof note.notesHtml === 'string') {
+      note.notesHtml = note.notesHtml.replace(/<img\b[^>]*>/gi, whole => {
+        const markerMatch = /data-note-image-ref\s*=\s*(?:(["'])([^"']+)\1|([^\s>]+))/i.exec(whole);
+        const foundMarker = markerMatch ? (markerMatch[2] !== undefined ? markerMatch[2] : markerMatch[3]) : '';
+        if (foundMarker !== marker) return whole;
+        if (/\bsrc\s*=\s*/i.test(whole)) {
+          return whole.replace(/\bsrc\s*=\s*(?:(["'])[^"']*\1|[^\s>]+)/i, 'src="' + dataUrl + '"');
+        }
+        return whole.replace(/>$/, ' src="' + dataUrl + '">');
+      });
+    }
+    if (image.field === 'html') {
+      continue;
+    }
+    if (!Array.isArray(note[image.field])) note[image.field] = [];
+    const metadata = Object.assign({}, image);
+    delete metadata.dataUrl;
+    delete metadata.dataURL;
+    delete metadata.blob;
+    delete metadata.field;
+    delete metadata.index;
+    note[image.field][image.index] = Object.assign({}, note[image.field][image.index] || {}, metadata, {
+      imageBase64: dataUrl,
+      mimeType: image.mimeType || note[image.field][image.index]?.mimeType || 'application/octet-stream',
+    });
+  }
+  return note;
 }
 
 async function importNotes(input) {
@@ -665,7 +755,8 @@ async function importNotes(input) {
     for (const folder of folders) {
       if (!existingFolderIds.has(folder.id)) { await saveFolderFS(folder); }
     }
-    for (const note of notes) {
+    for (const bundle of notes) {
+      const note = _normaliseImportedNote(bundle);
       const _hasTitle = note.title && note.title.trim();
       const _hasContent = (note.notesText || note.markdownContent) &&
                           (note.notesText || note.markdownContent).trim();

@@ -76,6 +76,17 @@ function _syncImageSourceKey(source, entry) {
   try { return 'entry:' + JSON.stringify(entry); } catch (e) { return String(entry); }
 }
 
+function _noteNeedsImageUpload(note) {
+  if (!note || typeof note !== 'object') return false;
+  for (const field of ['extractedImages', 'slideImages']) {
+    if (!Array.isArray(note[field])) continue;
+    for (const entry of note[field]) {
+      if (entry && (entry.markerId || entry.dataNoteImageRef)) return true;
+    }
+  }
+  return typeof note.notesHtml === 'string' && /data-note-image-ref\s*=/.test(note.notesHtml);
+}
+
 function _syncEntryWithUrl(entry, url) {
   const output = entry && typeof entry === 'object' && !(entry instanceof Blob)
     ? Object.assign({}, entry)
@@ -795,7 +806,11 @@ async function migrateLocalToFirestore() {
           console.warn('[migrate] skipped empty legacy note', note.id);
           continue;
         }
-        try { await saveNoteFS(note); ok++; } catch (e) { console.warn('Note migration skip:', note.id, e.message); }
+        try {
+          const source = _noteNeedsImageUpload(note) ? await getNote(note.id) : note;
+          await saveNoteFS(source || note);
+          ok++;
+        } catch (e) { console.warn('Note migration skip:', note.id, e.message); }
       }
       showSuccessToast('☁️ ' + ok + '/' + localNotes.length + '개 노트 이전 완료');
     }
