@@ -89,6 +89,6 @@ assert_contains "$LP_HTML"            'id="finalNotesBody"'                "LP-5
 # 같은 단언이 두 벌이 된다. 이 스펙이 더할 게 있는 건 **CSS 링크**뿐이다:
 # 지금까지 캐시버스트를 핀하던 스펙은 전부 JS 파일이었고, 이번 라운드는 처음으로
 # system.css가 바뀐다. 현재값 정확 핀 — 얼터네이션은 회귀 감지력이 0이다.
-assert_contains "$LP_HTML" 'system.css?v=demoauth1' "LP-6: system.css 캐시버스트 갱신 (CSS가 바뀐 라운드)"
+assert_contains "$LP_HTML" 'system.css?v=storage2task7' "LP-6: system.css 캐시버스트 갱신 (CSS가 바뀐 라운드)"
 
 rm -f "$LP_REGION"
