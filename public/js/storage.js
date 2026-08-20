@@ -86,6 +86,30 @@ function openDB() {
   });
 }
 
+// Migration probe: inspect detached ownership without hydrating Blob values
+// into data URLs. A note is upload-eligible only when this exact record has a
+// local Blob owner; lightweight marker metadata alone is not evidence of one.
+async function hasLocalNoteImageBlobs(noteId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('noteImages', 'readonly');
+    const request = tx.objectStore('noteImages').get(noteId);
+    request.onsuccess = event => {
+      const record = event.target.result;
+      const hasBlob = Boolean(record && Array.isArray(record.images)
+        && record.images.some(entry => entry && noteImageIsBlob(entry.blob)));
+      db.close();
+      resolve(hasBlob);
+    };
+    request.onerror = event => {
+      db.close();
+      reject(event.target.error || tx.error);
+    };
+    tx.onerror = event => reject(event.target.error || tx.error);
+    tx.onabort = event => reject(event.target.error || tx.error || new Error('Image probe aborted'));
+  });
+}
+
 async function saveQuizResult(result) {
   const db = await openDB();
   return new Promise((resolve, reject) => {

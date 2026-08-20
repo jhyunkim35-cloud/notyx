@@ -362,6 +362,19 @@ try {
     'getAllNotes must never touch noteImages');
 
   await page.evaluate(() => window.__storage2ResetIdbTrace());
+  const localBlobProbe = await page.evaluate(async () => ({
+    payload: await hasLocalNoteImageBlobs('payload-note'),
+    urlOnly: await hasLocalNoteImageBlobs('url-note'),
+    trace: window.__storage2IdbTrace.slice(),
+  }));
+  assert.equal(localBlobProbe.payload, true, 'local Blob probe identifies noteImages ownership');
+  assert.equal(localBlobProbe.urlOnly, false, 'local Blob probe rejects URL-only notes');
+  assert.deepEqual(localBlobProbe.trace.filter(entry => entry.storeName === 'noteImages' && entry.operation === 'get').map(entry => entry.key),
+    ['payload-note', 'url-note'], 'local Blob probe reads exactly one noteImages key per note');
+  assert.equal(localBlobProbe.trace.some(entry => entry.storeName === 'noteImages' && entry.operation === 'getAll'), false,
+    'local Blob probe must not scan noteImages');
+
+  await page.evaluate(() => window.__storage2ResetIdbTrace());
   const hydratedPayloadNote = await page.evaluate(() => getNote('payload-note'));
   assert.match(hydratedPayloadNote.extractedImages[0].imageBase64, /^iVBORw0KGgo=/,
     'getNote must hydrate local image payloads');

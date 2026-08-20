@@ -76,17 +76,6 @@ function _syncImageSourceKey(source, entry) {
   try { return 'entry:' + JSON.stringify(entry); } catch (e) { return String(entry); }
 }
 
-function _noteNeedsImageUpload(note) {
-  if (!note || typeof note !== 'object') return false;
-  for (const field of ['extractedImages', 'slideImages']) {
-    if (!Array.isArray(note[field])) continue;
-    for (const entry of note[field]) {
-      if (entry && (entry.markerId || entry.dataNoteImageRef)) return true;
-    }
-  }
-  return typeof note.notesHtml === 'string' && /data-note-image-ref\s*=/.test(note.notesHtml);
-}
-
 function _syncEntryWithUrl(entry, url) {
   const output = entry && typeof entry === 'object' && !(entry instanceof Blob)
     ? Object.assign({}, entry)
@@ -792,33 +781,52 @@ async function migrateLocalToFirestore() {
   if (!currentUser) return;
   const migrated = localStorage.getItem('fs_migrated_' + currentUser.uid);
   if (migrated) return;
+  let localNotes = [];
+  let localFolders = [];
+  let failures = 0;
   try {
-    const localNotes = await getAllNotes();
-    const localFolders = await getAllFolders();
-    if (localFolders.length > 0 || localNotes.length > 0) {
-      showToast('📦 로컬 노트를 클라우드로 이전 중...');
-      for (const folder of localFolders) {
-        try { await saveFolderFS(folder); } catch (e) { console.warn('Folder migration skip:', e); }
-      }
-      let ok = 0;
-      for (const note of localNotes) {
-        if (!note.title?.trim() || !(note.notesText || note.markdownContent)?.trim()) {
-          console.warn('[migrate] skipped empty legacy note', note.id);
-          continue;
-        }
-        try {
-          const source = _noteNeedsImageUpload(note) ? await getNote(note.id) : note;
-          await saveNoteFS(source || note);
-          ok++;
-        } catch (e) { console.warn('Note migration skip:', note.id, e.message); }
-      }
-      showSuccessToast('☁️ ' + ok + '/' + localNotes.length + '개 노트 이전 완료');
-    }
+    localNotes = await getAllNotes();
+    localFolders = await getAllFolders();
   } catch (e) {
-    console.error('Migration error:', e);
+    failures++;
   }
-  // Always set flag so we don't retry
-  localStorage.setItem('fs_migrated_' + currentUser.uid, 'true');
+  if (localFolders.length > 0 || localNotes.length > 0) showToast('📦 로컬 노트를 클라우드로 이전 중...');
+
+  for (const folder of localFolders) {
+    try {
+      await saveFolderFS(folder);
+    } catch (e) {
+      failures++;
+    }
+  }
+
+  let ok = 0;
+  for (const note of localNotes) {
+    const title = typeof note?.title === 'string' ? note.title.trim() : '';
+    const body = typeof note?.notesText === 'string'
+      ? note.notesText.trim()
+      : (typeof note?.markdownContent === 'string' ? note.markdownContent.trim() : '');
+    if (!title && !body) continue;
+    try {
+      const hasLocalImages = typeof hasLocalNoteImageBlobs === 'function'
+        ? await hasLocalNoteImageBlobs(note.id)
+        : false;
+      const source = hasLocalImages ? await getNote(note.id) : note;
+      await saveNoteFS(source || note);
+      ok++;
+    } catch (e) {
+      failures++;
+    }
+  }
+
+  if (localFolders.length > 0 || localNotes.length > 0) {
+    showSuccessToast('☁️ ' + ok + '/' + localNotes.length + '개 노트 이전 완료');
+  }
+  if (failures === 0) {
+    localStorage.setItem('fs_migrated_' + currentUser.uid, 'true');
+  } else {
+    localStorage.removeItem('fs_migrated_' + currentUser.uid);
+  }
 }
 
 async function syncNotesOnLogin() {

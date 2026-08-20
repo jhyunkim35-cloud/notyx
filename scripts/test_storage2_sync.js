@@ -4,22 +4,42 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 function loadContext() {
+  const syncWarnings = [];
+  const syncErrors = [];
+  const testConsole = {
+    log() {},
+    trace() {},
+    warn(...args) { syncWarnings.push(args.join(' ')); },
+    error(...args) { syncErrors.push(args.join(' ')); },
+  };
   const context = {
     Blob,
     atob,
     btoa,
-    console,
+    console: testConsole,
     setTimeout,
     clearTimeout,
     queueMicrotask,
     TextEncoder,
     TextDecoder,
     window: {},
+    openDB: async () => ({}),
+    firebase: {
+      firestore() {
+        return {
+          collection() {
+            return { doc() { return { collection() { return { get: async () => ({ docs: [] }) }; } }; } };
+          },
+        };
+      },
+    },
   };
   for (const file of ['note_images.js', 'firestore_sync.js', 'notes_crud.js']) {
     const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', file), 'utf8');
     vm.runInNewContext(source, context, { filename: file });
   }
+  context.__syncWarnings = syncWarnings;
+  context.__syncErrors = syncErrors;
   return context;
 }
 
@@ -652,6 +672,7 @@ async function run() {
     'folder save and rename writers remain executable');
 
   const loginWrites = [];
+  context.openDB = async () => ({});
   makeFirestore(context, loginWrites, [{
     id: 'login-legacy',
     title: 'Login legacy',
@@ -710,6 +731,9 @@ async function run() {
     'remote delete failure must not prevent local note and noteImages deletion');
   assert.equal(localNotes.has('delete-me'), false, 'actual local note deletion completed');
   assert.equal(localImageRecords.has('delete-me'), false, 'actual local noteImages deletion completed');
+  assert.equal(context.__syncErrors.length, 0, 'sync fixture must not emit unexpected console.error');
+  assert.equal(context.__syncWarnings.length, 1, 'sync fixture warning must be intentional and isolated: ' + JSON.stringify(context.__syncWarnings));
+  assert.match(context.__syncWarnings[0], /^deleteNoteAudio failed \(best-effort\): audio delete failed$/);
 
   console.log('STORAGE2 sync: PASS (Task 5 payload-safe Firestore and sync contracts)');
 }

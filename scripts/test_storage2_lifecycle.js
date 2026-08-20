@@ -4,11 +4,17 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 function loadContext() {
+  const testConsole = {
+    log() {},
+    trace() {},
+    warn(...args) { throw new Error(`unexpected console.warn: ${args.join(' ')}`); },
+    error(...args) { throw new Error(`unexpected console.error: ${args.join(' ')}`); },
+  };
   const context = {
     Blob,
     atob,
     btoa,
-    console,
+    console: testConsole,
     setTimeout,
     clearTimeout,
     queueMicrotask,
@@ -16,6 +22,15 @@ function loadContext() {
     TextDecoder,
     window: {},
     URL: { createObjectURL: () => 'blob:fixture', revokeObjectURL() {} },
+    firebase: {
+      firestore() {
+        return {
+          collection() {
+            return { doc() { return { collection() { return { get: async () => ({ docs: [] }) }; } }; } };
+          },
+        };
+      },
+    },
   };
   for (const file of ['note_images.js', 'storage.js', 'notes_crud.js', 'firestore_sync.js']) {
     const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', file), 'utf8');
@@ -123,6 +138,7 @@ async function run() {
   const roundTripCalls = [];
   context.getAllNotesFS = async () => [];
   context.getAllFoldersFS = async () => [];
+  context.showToast = () => {};
   context.saveNoteFS = async note => { roundTripCalls.push(note); return note; };
   await context.importNotes({
     value: 'round-trip',
@@ -132,6 +148,7 @@ async function run() {
   assert.equal(roundTripCalls[0].extractedImages[0].imageBase64, png, 'export/import round-trip restores local image data');
   assert.equal(roundTripCalls[0].extractedImages[0].mimeType, 'image/png');
   assert.match(roundTripCalls[0].notesHtml, /data-note-image-ref="note-image-0"/);
+  context.showToast = () => {};
 
   const importCalls = [];
   context.currentUser = null;
@@ -153,9 +170,7 @@ async function run() {
         images: [{ field: 'extractedImages', index: 2, markerId: 'note-image-2', mimeType: 'image/webp', fileName: 'third.webp', dataUrl: png }],
       },
       {
-        id: 'legacy-import', title: 'Legacy import', notesText: 'Legacy payload',
-        notesHtml: `<img src="${png}">`,
-        extractedImages: [{ imageBase64: png, mimeType: 'image/png', fileName: 'legacy.png' }],
+        id: 'invalid-v2-legacy-entry', title: 'Invalid mixed entry', notesText: 'Must be rejected',
       },
     ],
   };
@@ -163,14 +178,92 @@ async function run() {
     value: 'selected',
     files: [{ text: async () => JSON.stringify(importData) }],
   });
-  assert.equal(importCalls.length, 2, 'legacy and detached bundles import one note at a time');
+  assert.equal(importCalls.length, 0, 'v2 rejects raw legacy entries before any write');
+
+  await context.importNotes({
+    value: 'detached',
+    files: [{ text: async () => JSON.stringify({
+      schema: 'notyx.storage2', version: 2, folders: [], notes: [importData.notes[0]],
+    }) }],
+  });
+  assert.equal(importCalls.length, 1, 'valid detached bundle imports through the writer');
   assert.equal(importCalls[0].extractedImages[2].imageBase64, png);
   assert.equal(importCalls[0].extractedImages[2].mimeType, 'image/webp');
   assert.equal(importCalls[0].extractedImages[1], null, 'detached import preserves sparse image positions');
   assert.equal(importCalls[0].slideImageUrls[1], null, 'detached import preserves sparse URL positions');
   assert.match(importCalls[0].notesHtml, /data-note-image-ref="note-image-2"/);
   assert.match(importCalls[0].notesHtml, new RegExp(png.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  await context.importNotes({
+    value: 'legacy',
+    files: [{ text: async () => JSON.stringify({
+      notes: [{
+        id: 'legacy-import', title: 'Legacy import', notesText: 'Legacy payload',
+        notesHtml: `<img src="${png}">`,
+        extractedImages: [{ imageBase64: png, mimeType: 'image/png', fileName: 'legacy.png' }],
+      }],
+    }) }],
+  });
+  assert.equal(importCalls.length, 2, 'legacy input imports through the writer');
   assert.equal(importCalls[1].extractedImages[0].mimeType, 'image/png', 'legacy MIME metadata survives');
+
+  await context.importNotes({
+    value: 'legacy sparse text',
+    files: [{ text: async () => JSON.stringify({ notes: [
+      { id: 'legacy-title-only', title: 'Title only' },
+      { id: 'legacy-body-only', notesText: 'Body only' },
+    ] }) }],
+  });
+  assert.equal(importCalls.length, 4, 'legacy title-only and body-only notes remain compatible');
+
+  const detachedRoundTrip = context.detachNoteImages({
+    id: 'byte-round-trip',
+    title: 'Byte round trip',
+    notesText: 'HTML and aliases',
+    notesHtml: `<p>body</p><img src="${png}" data-note-image-ref="note-image-0">`,
+    extractedImages: [{ markerId: 'note-image-0', imageBase64: png, mimeType: 'image/png', fileName: 'one.png' }],
+    slideImages: [, { imageBase64: 'data:image/jpeg;base64,/9j/', mimeType: 'image/jpeg', fileName: 'two.jpg' }],
+  });
+  assert.equal(detachedRoundTrip.note.notesHtml.includes('data:image/'), false);
+  assert.equal(detachedRoundTrip.imageRecord.images.length, 2, 'HTML/array aliases have detached owners');
+  const hydratedRoundTrip = await context.hydrateNoteImages(detachedRoundTrip.note, detachedRoundTrip.imageRecord);
+  assert.equal(hydratedRoundTrip.extractedImages[0].imageBase64, 'iVBORw0KGgo=');
+  assert.equal(hydratedRoundTrip.slideImages[1].imageBase64, '/9j/');
+  assert.match(hydratedRoundTrip.notesHtml, /data:image\/png;base64,iVBORw0KGgo=/);
+
+  const invalidWrites = [];
+  context.getAllNotesFS = async () => [];
+  context.getAllFoldersFS = async () => [];
+  context.saveFolderFS = async folder => { invalidWrites.push({ type: 'folder', value: folder }); };
+  context.saveNoteFS = async note => { invalidWrites.push({ type: 'note', value: note }); };
+  async function assertRejectedImport(data, label) {
+    invalidWrites.length = 0;
+    await context.importNotes({ value: label, files: [{ text: async () => JSON.stringify(data) }] });
+    assert.equal(invalidWrites.length, 0, `${label} must reject before any folder/note write`);
+  }
+  const validDetachedNote = {
+    id: 'invalid-fixture-note', title: 'Valid title', notesText: 'Valid body',
+    notesHtml: '<img src="" data-note-image-ref="note-image-0">',
+  };
+  const validPortable = {
+    field: 'extractedImages', index: 0, markerId: 'note-image-0',
+    mimeType: 'image/png', dataUrl: png,
+  };
+  await assertRejectedImport({ schema: 'foreign.storage', version: 2, folders: [], notes: [] }, 'foreign schema');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 3, folders: [], notes: [] }, 'unsupported version');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: {} }, 'malformed notes shape');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [
+    { note: { ...validDetachedNote, id: 'duplicate-note' }, images: [] },
+    { note: { ...validDetachedNote, id: 'duplicate-note' }, images: [] },
+  ] }, 'duplicate note id');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [{ id: 'duplicate-folder', name: 'one' }, { id: 'duplicate-folder', name: 'two' }], notes: [] }, 'duplicate folder id');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{ note: validDetachedNote, images: [validPortable, validPortable] }] }, 'duplicate owner');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{ note: validDetachedNote, images: [validPortable, { ...validPortable, field: 'slideImages' }] }] }, 'duplicate marker');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{ note: validDetachedNote, images: [{ ...validPortable, field: 'slideImageUrls' }] }] }, 'arbitrary image field');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{ note: validDetachedNote, images: [{ ...validPortable, dataUrl: 'data:image/png;base64,not valid???' }] }] }, 'invalid data URL');
+  await assertRejectedImport({ schema: 'notyx.storage2', version: 2, folders: [], notes: [{
+    note: { ...validDetachedNote, slideImageUrls: [png] }, images: [],
+  }] }, 'detached slideImageUrls data URL');
 
   const moveWrites = [];
   const moveHydrates = [];
@@ -217,18 +310,35 @@ async function run() {
   context.localStorage = {
     getItem: key => localStore.get(key) || null,
     setItem: (key, value) => localStore.set(key, String(value)),
+    removeItem: key => localStore.delete(key),
   };
   context.getAllNotes = async () => [
     { id: 'url-only', title: 'URL only', notesText: 'No local image', extractedImages: [{ imageBase64: remote, mimeType: 'url' }] },
+    { id: 'marker-without-blob', title: 'Marker only', notesText: 'No local record', extractedImages: [{ markerId: 'note-image-1', mimeType: 'image/png' }] },
     { id: 'local-image', title: 'Local image', notesText: 'Needs upload', extractedImages: [{ markerId: 'note-image-0', mimeType: 'image/png' }] },
   ];
   context.getAllFolders = async () => [];
+  context.hasLocalNoteImageBlobs = async id => id === 'local-image';
   context.getNote = async id => { migrationGets.push(id); return { id, title: 'Local image', notesText: 'Needs upload', extractedImages: [{ imageBase64: png, mimeType: 'image/png' }] }; };
   context.saveNoteFS = async note => { migrationSaves.push(note); return note; };
   context.saveFolderFS = async () => {};
   await context.migrateLocalToFirestore();
-  assert.deepEqual(migrationGets, ['local-image'], 'local-to-Firestore migration hydrates only notes needing upload');
-  assert.deepEqual(migrationSaves.map(note => note.id), ['url-only', 'local-image']);
+  assert.deepEqual(migrationGets, ['local-image'], 'local-to-Firestore migration hydrates only confirmed local Blob owners');
+  assert.deepEqual(migrationSaves.map(note => note.id), ['url-only', 'marker-without-blob', 'local-image']);
+  assert.equal(localStore.get('fs_migrated_migration-user'), 'true', 'successful migration sets the retry flag');
+
+  localStore.delete('fs_migrated_migration-retry-user');
+  context.currentUser = { uid: 'migration-retry-user' };
+  context.getAllNotes = async () => [{ id: 'retry-note', title: 'Retry note', notesText: 'Retry body', extractedImages: [{ markerId: 'note-image-2' }] }];
+  context.hasLocalNoteImageBlobs = async () => true;
+  context.getNote = async () => { throw new Error('hydration failed'); };
+  context.saveNoteFS = async () => { throw new Error('must not save after hydration failure'); };
+  await context.migrateLocalToFirestore();
+  assert.equal(localStore.has('fs_migrated_migration-retry-user'), false, 'failed required migration keeps retry state unset');
+  context.getNote = async id => ({ id, title: 'Retry note', notesText: 'Retry body', extractedImages: [{ imageBase64: png, mimeType: 'image/png' }] });
+  context.saveNoteFS = async note => { migrationSaves.push(note); };
+  await context.migrateLocalToFirestore();
+  assert.equal(localStore.get('fs_migrated_migration-retry-user'), 'true', 'retry success sets the migration flag');
 
   const syncSaves = [];
   const remoteNote = { id: 'remote-only', title: 'Remote note', notesText: 'Restore one note', slideImageUrls: [remote] };
@@ -249,6 +359,7 @@ async function run() {
   };
   context.getAllNotes = async () => [];
   context.getAllFolders = async () => [];
+  context.openDB = async () => ({});
   context.saveNote = async note => { syncSaves.push(note); return note; };
   context.getNote = async () => { throw new Error('Firestore-to-local sync must not hydrate list notes'); };
   await context.syncNotesOnLogin();
