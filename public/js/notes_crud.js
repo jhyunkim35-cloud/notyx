@@ -879,6 +879,62 @@ function _validateLegacyDirectSource(value, mimeType, label) {
   _importReject(label + ' must be a supported image source');
 }
 
+function _normaliseLegacyRemoteSource(value) {
+  const trimmed = String(value).trim();
+  const match = /^(https?:\/\/|\/\/)([^\/?#]*)([\s\S]*)$/i.exec(trimmed);
+  if (!match) return trimmed;
+  return match[1].toLowerCase() + match[2].toLowerCase() + match[3];
+}
+
+function _legacyBytesSignature(bytes, mimeType) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
+    binary += String.fromCharCode(...chunk);
+  }
+  return String(mimeType || '').toLowerCase() + '\u0000' + btoa(binary);
+}
+
+function _legacyCanonicalSource(value, mimeType, label) {
+  _validateLegacyDirectSource(value, mimeType, label);
+  if (noteImageIsBlob(value)) return { kind: 'blob', value };
+  const source = value.trim();
+  if (isRemoteImageSource(source, mimeType)) {
+    return { kind: 'remote', signature: _normaliseLegacyRemoteSource(source) };
+  }
+  try {
+    if (isDataImageSource(source)) {
+      const parsed = noteImageParseDataUrl(source);
+      let bytes;
+      if (parsed.isBase64) {
+        const binary = atob(noteImageNormaliseBase64(parsed.encoded));
+        bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      } else {
+        bytes = new TextEncoder().encode(decodeURIComponent(parsed.encoded));
+      }
+      return { kind: 'local', signature: _legacyBytesSignature(bytes, parsed.mimeType) };
+    }
+    if (noteImageLooksLikeRawBase64(source, mimeType)) {
+      const binary = atob(noteImageNormaliseBase64(source));
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      return { kind: 'local', signature: _legacyBytesSignature(bytes, mimeType) };
+    }
+  } catch (error) {
+    _importReject(label + ' must contain decodable image bytes');
+  }
+  _importReject(label + ' must be a supported image source');
+}
+
+function _legacySourcesEquivalent(left, right) {
+  if (left.kind === 'blob' || right.kind === 'blob') {
+    return left.kind === 'blob' && right.kind === 'blob' && left.value === right.value;
+  }
+  return left.kind === right.kind && left.signature === right.signature;
+}
+
 function _validateLegacyNestedMetadata(value, label, seen = new Set()) {
   if (value === null || value === undefined) return;
   if (noteImageIsBlob(value)) _importReject(label + ' contains a nested Blob payload');
@@ -907,12 +963,19 @@ function _validateLegacyCanonicalEntry(entry, label) {
     return;
   }
   if (!noteImageIsPlainObject(entry)) _importReject(label + ' must be a direct source or plain metadata object');
+  const sources = [];
   for (const [key, value] of Object.entries(entry)) {
     if (_LEGACY_DIRECT_SOURCE_KEYS.has(key)) {
       if (value === null || value === undefined || value === '') continue;
       _validateLegacyDirectSource(value, entry.mimeType, label + '.' + key);
+      sources.push({ key, source: _legacyCanonicalSource(value, entry.mimeType, label + '.' + key) });
     } else {
       _validateLegacyNestedMetadata(value, label + '.' + key);
+    }
+  }
+  for (let index = 1; index < sources.length; index++) {
+    if (!_legacySourcesEquivalent(sources[0].source, sources[index].source)) {
+      _importReject(label + ' has conflicting image sources: ' + sources[0].key + ' vs ' + sources[index].key);
     }
   }
 }

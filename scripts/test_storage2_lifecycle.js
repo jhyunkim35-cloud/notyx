@@ -233,6 +233,37 @@ async function run() {
   assert.equal(directBlobPlan.notes[0].note.extractedImages[0], directLegacyBlob,
     'legacy direct Blob remains supported');
 
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-conflicting-aliases', title: 'Conflicting aliases', notesText: 'Must reject',
+    extractedImages: [{ imageBase64: png, src: 'data:image/png;base64,iVBORw0KGgoAAQ==' }],
+  }] }), /conflicting image sources/,
+  'conflicting string aliases must reject before any write');
+
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-conflicting-data-aliases', title: 'Conflicting data aliases', notesText: 'Must reject',
+    extractedImages: [{ data: png, imageData: 'data:image/png;base64,iVBORw0KGgoAAQ==' }],
+  }] }), /conflicting image sources/,
+  'conflicting data/imageData aliases must reject before any write');
+
+  const conflictingBlob = new context.Blob(['different bytes'], { type: 'image/png' });
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-conflicting-blob-alias', title: 'Conflicting Blob alias', notesText: 'Must reject',
+    extractedImages: [{ data: png, blob: conflictingBlob }],
+  }] }), /conflicting image sources/,
+  'data/Blob alias combinations must reject without asynchronous Blob comparison');
+
+  const equivalentAliasPlan = context._buildImportPlan({ notes: [{
+    id: 'legacy-equivalent-aliases', title: 'Equivalent aliases', notesText: 'Keep exact bytes',
+    extractedImages: [{ imageBase64: 'iVBORw0KGgo=', src: png, mimeType: 'image/png' }],
+  }] });
+  const equivalentDetached = context.detachNoteImages(equivalentAliasPlan.notes[0].note);
+  const equivalentHydrated = await context.hydrateNoteImages(
+    equivalentDetached.note,
+    equivalentDetached.imageRecord,
+  );
+  assert.equal(equivalentHydrated.extractedImages[0].imageBase64, 'iVBORw0KGgo=',
+    'equivalent raw/data aliases preserve exact bytes through detach/hydrate');
+
   const detachedRoundTrip = context.detachNoteImages({
     id: 'byte-round-trip',
     title: 'Byte round trip',
