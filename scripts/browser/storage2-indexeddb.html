@@ -15,6 +15,49 @@
     };
     window.__storage2ScriptOrder = ['fixture-helpers'];
 
+    function appConfirm() { return Promise.resolve(true); }
+    function showSuccessToast() {}
+    function showToast() {}
+    function renderHomeView() {}
+
+    window.__storage2IdbTrace = [];
+    window.__storage2ResetIdbTrace = function () {
+      window.__storage2IdbTrace.length = 0;
+    };
+    (function installIdbTrace() {
+      var originalTransaction = IDBDatabase.prototype.transaction;
+      var originalGet = IDBObjectStore.prototype.get;
+      var originalGetAll = IDBObjectStore.prototype.getAll;
+      var originalPut = IDBObjectStore.prototype.put;
+      var originalDelete = IDBObjectStore.prototype.delete;
+      var originalClear = IDBObjectStore.prototype.clear;
+
+      IDBDatabase.prototype.transaction = function (storeNames, mode, options) {
+        var names = typeof storeNames === 'string' ? [storeNames] : Array.from(storeNames);
+        window.__storage2IdbTrace.push({ type: 'transaction', storeNames: names.slice(), mode: mode || 'readonly' });
+        return originalTransaction.call(this, storeNames, mode, options);
+      };
+
+      function traceRequest(operation, original) {
+        return function () {
+          var key = arguments.length > 0 ? arguments[0] : undefined;
+          window.__storage2IdbTrace.push({
+            type: 'request',
+            operation: operation,
+            storeName: this.name,
+            key: key,
+          });
+          return original.apply(this, arguments);
+        };
+      }
+
+      IDBObjectStore.prototype.get = traceRequest('get', originalGet);
+      IDBObjectStore.prototype.getAll = traceRequest('getAll', originalGetAll);
+      IDBObjectStore.prototype.put = traceRequest('put', originalPut);
+      IDBObjectStore.prototype.delete = traceRequest('delete', originalDelete);
+      IDBObjectStore.prototype.clear = traceRequest('clear', originalClear);
+    }());
+
     function uuidv4() {
       return 'fixture-id';
     }
@@ -189,6 +232,26 @@
     }
 
     window.__createV5Fixture = createV5Fixture;
+
+    window.__storage2ReadImageRecord = async function (noteId) {
+      var database = await openDB();
+      var record = await requestResult(database.transaction('noteImages', 'readonly')
+        .objectStore('noteImages').get(noteId));
+      database.close();
+      if (!record) return null;
+      return {
+        noteId: record.noteId,
+        images: await Promise.all(record.images.map(async function (image) {
+          return Object.assign({}, image, {
+            blob: {
+              type: image.blob.type,
+              size: image.blob.size,
+              bytes: Array.from(new Uint8Array(await image.blob.arrayBuffer())),
+            },
+          });
+        })),
+      };
+    };
   </script>
   <script src="../../public/js/constants.js"></script>
   <script>

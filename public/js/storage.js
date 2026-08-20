@@ -124,6 +124,117 @@ async function getQuizResultsByNote(noteId) {
   });
 }
 
+function saveNoteTransaction(db, note, requestedRecord) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['notes', 'noteImages'], 'readwrite');
+    const notes = tx.objectStore('notes');
+    const noteImages = tx.objectStore('noteImages');
+    let previousNote;
+    let previousImageRecord;
+    let lightweightRecord;
+    let failure;
+    let settled = false;
+    let noteReady = false;
+    let imageReady = false;
+
+    function abortWith(error) {
+      failure = error || new Error('Note transaction aborted');
+      try {
+        tx.abort();
+      } catch (_) {
+        if (!settled) {
+          settled = true;
+          reject({ error: failure, previousNote, previousImageRecord });
+        }
+      }
+    }
+
+    function prepare() {
+      if (!noteReady || !imageReady || settled) return;
+      try {
+        const mergedRecord = Object.assign(
+          { folderId: null, createdAt: new Date().toISOString() },
+          previousNote || {},
+          requestedRecord,
+        );
+        const detached = detachNoteImages(
+          Object.assign({}, note, { id: mergedRecord.id }),
+          previousImageRecord,
+        );
+        lightweightRecord = Object.assign({}, mergedRecord, detached.note);
+        if (detached.imageRecord.images.length > 0) noteImages.put(detached.imageRecord);
+        else noteImages.delete(mergedRecord.id);
+        notes.put(lightweightRecord);
+      } catch (error) {
+        abortWith(error);
+      }
+    }
+
+    tx.oncomplete = () => {
+      if (settled) return;
+      settled = true;
+      resolve({ record: lightweightRecord, previousNote, previousImageRecord });
+    };
+    tx.onerror = event => {
+      if (!failure) failure = event.target.error || tx.error;
+    };
+    tx.onabort = () => {
+      if (settled) return;
+      settled = true;
+      reject({
+        error: failure || tx.error || new Error('Note transaction aborted'),
+        previousNote,
+        previousImageRecord,
+      });
+    };
+
+    const noteRequest = notes.get(requestedRecord.id);
+    noteRequest.onsuccess = event => {
+      previousNote = event.target.result;
+      noteReady = true;
+      prepare();
+    };
+    noteRequest.onerror = event => abortWith(event.target.error);
+
+    const imageRequest = noteImages.get(requestedRecord.id);
+    imageRequest.onsuccess = event => {
+      previousImageRecord = event.target.result;
+      imageReady = true;
+      prepare();
+    };
+    imageRequest.onerror = event => abortWith(event.target.error);
+  });
+}
+
+function saveNoteLightweightAfterQuota(db, requestedRecord, previousNote) {
+  const incomingLightweight = detachNoteImages(requestedRecord).note;
+  const fallbackRecord = Object.assign(
+    { folderId: null, createdAt: new Date().toISOString() },
+    previousNote || {},
+    requestedRecord,
+  );
+  const imageFields = ['extractedImages', 'slideImages', 'notesHtml'];
+  for (const field of imageFields) {
+    if (previousNote && Object.prototype.hasOwnProperty.call(previousNote, field)) {
+      fallbackRecord[field] = noteImageClone(previousNote[field]);
+    } else if (Object.prototype.hasOwnProperty.call(incomingLightweight, field)) {
+      fallbackRecord[field] = incomingLightweight[field];
+    } else {
+      delete fallbackRecord[field];
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('notes', 'readwrite');
+    tx.objectStore('notes').put(fallbackRecord);
+    tx.oncomplete = () => resolve(Object.assign({}, fallbackRecord, {
+      saveStatus: 'image-degraded',
+      degradation: { resource: 'noteImages', reason: 'quota' },
+    }));
+    tx.onerror = event => reject(event.target.error || tx.error);
+    tx.onabort = event => reject(event.target.error || tx.error || new Error('Lightweight note save aborted'));
+  });
+}
+
 async function saveNote(note) {
   // ───── GHOST GUARD ─────
   // saveNote is the only IndexedDB writer for notes. Reject anything that
@@ -155,26 +266,51 @@ async function saveNote(note) {
   if (sortOrder === undefined && !note.id) {
     sortOrder = await getNextSortOrder(note.folderId ?? null);
   }
-  const record = Object.assign({ folderId: null, createdAt: now }, note, {
+  const requestedRecord = Object.assign({}, note, {
     id:        note.id || uuidv4(),
     updatedAt: now,
     ...(sortOrder !== undefined ? { sortOrder } : {}),
   });
-  return new Promise((resolve, reject) => {
-    const tx  = db.transaction('notes', 'readwrite');
-    tx.objectStore('notes').put(record);
-    tx.oncomplete = () => resolve(record);
-    tx.onerror    = e => reject(e.target.error);
-    tx.onabort    = e => reject(e.target.error);
-  });
+  try {
+    const result = await saveNoteTransaction(db, note, requestedRecord);
+    db.close();
+    return result.record;
+  } catch (failure) {
+    const error = failure && failure.error ? failure.error : failure;
+    if (!isQuotaExceededError(error)) {
+      db.close();
+      throw error;
+    }
+    try {
+      return await saveNoteLightweightAfterQuota(db, requestedRecord, failure.previousNote);
+    } finally {
+      db.close();
+    }
+  }
 }
 
 async function getNote(id) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const req = db.transaction('notes', 'readonly').objectStore('notes').get(id);
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror   = e => reject(e.target.error);
+    const tx = db.transaction(['notes', 'noteImages'], 'readonly');
+    const noteRequest = tx.objectStore('notes').get(id);
+    const imageRequest = tx.objectStore('noteImages').get(id);
+    let note;
+    let imageRecord;
+    noteRequest.onsuccess = event => { note = event.target.result; };
+    imageRequest.onsuccess = event => { imageRecord = event.target.result; };
+    tx.oncomplete = () => {
+      db.close();
+      if (!note) {
+        resolve(note);
+        return;
+      }
+      hydrateNoteImages(note, imageRecord).then(resolve, reject);
+    };
+    noteRequest.onerror = event => reject(event.target.error);
+    imageRequest.onerror = event => reject(event.target.error);
+    tx.onerror = event => reject(event.target.error || tx.error);
+    tx.onabort = event => reject(event.target.error || tx.error || new Error('Note read aborted'));
   });
 }
 
@@ -182,7 +318,11 @@ async function getAllNotes() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const req = db.transaction('notes', 'readonly').objectStore('notes').getAll();
-    req.onsuccess = e => resolve(e.target.result.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')));
+    req.onsuccess = e => {
+      const notes = e.target.result.map(note => stripNoteImagePayloads(note));
+      db.close();
+      resolve(notes.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')));
+    };
     req.onerror   = e => reject(e.target.error);
   });
 }
@@ -212,9 +352,11 @@ async function updateNoteOrder(orderedIds) {
 async function deleteNote(id) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('notes', 'readwrite');
+    const tx = db.transaction(['notes', 'noteImages'], 'readwrite');
     tx.objectStore('notes').delete(id);
+    tx.objectStore('noteImages').delete(id);
     tx.oncomplete = () => {
+      db.close();
       resolve();
       // Fire-and-forget Firestore cleanup — note + all its quiz results
       const user = firebase.auth().currentUser;
@@ -322,10 +464,14 @@ async function clearAllStorage() {
   try {
     const db = await openDB();
     await new Promise((resolve, reject) => {
-      const tx = db.transaction(['notes', 'folders'], 'readwrite');
+      const tx = db.transaction(['notes', 'folders', 'noteImages'], 'readwrite');
       tx.objectStore('notes').clear();
       tx.objectStore('folders').clear();
-      tx.oncomplete = resolve;
+      tx.objectStore('noteImages').clear();
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
       tx.onerror    = e => reject(e.target.error);
     });
     currentNoteId = null;

@@ -337,6 +337,155 @@ try {
   assert.equal(htmlImages.images.length, 1);
   assert.equal(snapshot.first.imageRecords.some(record => record.noteId === 'url-note'), false);
 
+  await page.evaluate(() => window.__storage2ResetIdbTrace());
+  const allNotes = await page.evaluate(() => getAllNotes());
+  assert.equal(allNotes.length, 3, 'getAllNotes must return every lightweight note');
+  assertNoPayload(allNotes, 'getAllNotes result');
+  const listTrace = await page.evaluate(() => window.__storage2IdbTrace.slice());
+  assert.equal(listTrace.some(entry => entry.storeName === 'noteImages' || entry.storeNames?.includes('noteImages')), false,
+    'getAllNotes must never touch noteImages');
+
+  await page.evaluate(() => window.__storage2ResetIdbTrace());
+  const hydratedPayloadNote = await page.evaluate(() => getNote('payload-note'));
+  assert.match(hydratedPayloadNote.extractedImages[0].imageBase64, /^iVBORw0KGgo=/,
+    'getNote must hydrate local image payloads');
+  assert.match(hydratedPayloadNote.notesHtml, /src="data:image\/png;base64,/,
+    'getNote must hydrate HTML image sources');
+  const oneNoteTrace = await page.evaluate(() => window.__storage2IdbTrace.slice());
+  const imageReads = oneNoteTrace.filter(entry => entry.storeName === 'noteImages' && entry.operation === 'get');
+  assert.deepEqual(imageReads.map(entry => entry.key), ['payload-note'],
+    'getNote must read exactly the requested noteImages key');
+  assert.equal(oneNoteTrace.some(entry => entry.storeName === 'noteImages' && entry.operation === 'getAll'), false,
+    'getNote must not scan noteImages');
+
+  const priorPayloadImages = await page.evaluate(() => window.__storage2ReadImageRecord('payload-note'));
+  await page.evaluate(() => window.__storage2ResetIdbTrace());
+  await page.evaluate(() => saveNote({
+    id: 'payload-note',
+    title: 'Omitted image update',
+    notesText: 'Text survives an omitted image update.',
+  }));
+  const omittedUpdate = await page.evaluate(() => window.__storage2ReadImageRecord('payload-note'));
+  assert.deepEqual(omittedUpdate, priorPayloadImages, 'omitted image fields must preserve the detached record');
+  const omittedTrace = await page.evaluate(() => window.__storage2IdbTrace.slice());
+  const omittedWriteTransactions = omittedTrace.filter(entry => entry.type === 'transaction' && entry.mode === 'readwrite');
+  assert.deepEqual(omittedWriteTransactions.map(entry => entry.storeNames.slice().sort()), [['noteImages', 'notes']],
+    'saveNote must update notes and noteImages in one readwrite transaction');
+
+  await page.evaluate(() => saveNote({
+    id: 'payload-note',
+    title: 'Replace one image owner',
+    notesText: 'One image owner is replaced.',
+    extractedImages: [{
+      slideNumber: 42,
+      imageBase64: 'data:image/jpeg;base64,/9j/',
+      mimeType: 'image/jpeg',
+      fileName: 'replacement.jpg',
+    }],
+  }));
+  const replacedImages = await page.evaluate(() => window.__storage2ReadImageRecord('payload-note'));
+  assert.deepEqual(replacedImages.images.map(image => image.field), ['slideImages', 'html', 'extractedImages'],
+    'explicit non-empty image fields must replace only their owners');
+  assert.equal(replacedImages.images.find(image => image.field === 'extractedImages').slideNumber, 42);
+  assert.equal(replacedImages.images.find(image => image.field === 'extractedImages').fileName, 'replacement.jpg');
+  assert.equal(replacedImages.images.find(image => image.field === 'slideImages').fileName, 'slide-2-detail.jpg',
+    'omitted owners must remain during a replacement');
+
+  await page.evaluate(() => saveNote({
+    id: 'payload-note',
+    title: 'Delete two image owners',
+    notesText: 'Two image owners are deleted.',
+    extractedImages: [],
+    slideImages: [],
+  }));
+  const partiallyDeletedImages = await page.evaluate(() => window.__storage2ReadImageRecord('payload-note'));
+  assert.deepEqual(partiallyDeletedImages.images.map(image => image.field), ['html'],
+    'explicit empty fields must remove only their image owners');
+
+  await page.evaluate(() => saveNote({
+    id: 'payload-note',
+    title: 'Delete final image owner',
+    notesText: 'The final image owner is deleted.',
+    notesHtml: '',
+  }));
+  assert.equal(await page.evaluate(() => window.__storage2ReadImageRecord('payload-note')), null,
+    'noteImages must be deleted when no image owners remain');
+
+  await page.evaluate(() => saveNote({
+    id: 'crud-note',
+    title: 'CRUD delete note',
+    notesText: 'This note and its image record will be deleted.',
+    extractedImages: [{ slideNumber: 1, imageBase64: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' }],
+  }));
+  assert.ok(await page.evaluate(() => window.__storage2ReadImageRecord('crud-note')));
+  await page.evaluate(() => window.__storage2ResetIdbTrace());
+  await page.evaluate(() => deleteNote('crud-note'));
+  const deleteTrace = await page.evaluate(() => window.__storage2IdbTrace.slice());
+  assert.deepEqual(deleteTrace.filter(entry => entry.type === 'transaction' && entry.mode === 'readwrite')
+    .map(entry => entry.storeNames.slice().sort()), [['noteImages', 'notes']],
+  'deleteNote must remove notes and noteImages in one transaction');
+  const afterDelete = await captureSnapshot(page, { production: true });
+  assert.equal(afterDelete.first.notes.some(note => note.id === 'crud-note'), false, 'deleteNote must remove the note');
+  assert.equal(afterDelete.first.imageRecords.some(record => record.noteId === 'crud-note'), false,
+    'deleteNote must remove the matching noteImages record');
+
+  await page.evaluate(() => saveNote({
+    id: 'quota-note',
+    title: 'Quota baseline note',
+    notesText: 'Prior image survives a quota failure.',
+    extractedImages: [{ slideNumber: 3, imageBase64: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png', fileName: 'prior.png' }],
+  }));
+  const priorQuotaImages = await page.evaluate(() => window.__storage2ReadImageRecord('quota-note'));
+  await page.evaluate(() => window.__storage2ResetIdbTrace());
+  const quotaResult = await page.evaluate(async () => {
+    const originalPut = IDBObjectStore.prototype.put;
+    let injected = false;
+    IDBObjectStore.prototype.put = function () {
+      if (this.name === 'noteImages' && !injected) {
+        injected = true;
+        throw new DOMException('fixture quota failure', 'QuotaExceededError');
+      }
+      return originalPut.apply(this, arguments);
+    };
+    try {
+      const result = await saveNote({
+        id: 'quota-note',
+        title: 'Quota text update',
+        notesText: 'Text must survive the image quota failure.',
+        extractedImages: [{ slideNumber: 99, imageBase64: 'data:image/jpeg;base64,/9j/', mimeType: 'image/jpeg', fileName: 'new.jpg' }],
+      });
+      return { result, injected };
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+  });
+  assert.equal(quotaResult.injected, true, 'quota fixture must throw at the real noteImages put boundary');
+  assert.equal(quotaResult.result.saveStatus, 'image-degraded',
+    'quota fallback must expose an explicit degraded-save status');
+  assert.deepEqual(quotaResult.result.degradation, { resource: 'noteImages', reason: 'quota' },
+    'quota fallback must expose a typed image degradation reason');
+  const quotaTrace = await page.evaluate(() => window.__storage2IdbTrace.slice());
+  assert.deepEqual(quotaTrace.filter(entry => entry.type === 'transaction' && entry.mode === 'readwrite')
+    .map(entry => entry.storeNames.slice().sort()), [['noteImages', 'notes'], ['notes']],
+  'quota fallback must abort the image transaction before the lightweight retry');
+  const quotaNote = await page.evaluate(() => getNote('quota-note'));
+  assert.equal(quotaNote.notesText, 'Text must survive the image quota failure.');
+  assert.match(quotaNote.extractedImages[0].imageBase64, /^iVBORw0KGgo=/,
+    'quota fallback must preserve the prior image reference when possible');
+  assert.deepEqual(await page.evaluate(() => window.__storage2ReadImageRecord('quota-note')), priorQuotaImages,
+    'quota fallback must preserve the prior detached image record');
+
+  await page.evaluate(() => window.__storage2ResetIdbTrace());
+  await page.evaluate(() => clearAllStorage());
+  const clearTrace = await page.evaluate(() => window.__storage2IdbTrace.slice());
+  assert.deepEqual(clearTrace.filter(entry => entry.type === 'transaction' && entry.mode === 'readwrite')
+    .map(entry => entry.storeNames.slice().sort()), [['folders', 'noteImages', 'notes']],
+  'clearAllStorage must clear notes, folders, and noteImages in one transaction');
+  const cleared = await captureSnapshot(page, { production: true });
+  assert.deepEqual(cleared.first.stores.notes.records, [], 'clearAllStorage must clear notes');
+  assert.deepEqual(cleared.first.stores.noteImages.records, [], 'clearAllStorage must clear noteImages');
+  assert.deepEqual(cleared.timetable, snapshot.timetable, 'clearAllStorage must leave timetable behavior untouched');
+
   await page.evaluate(() => window.__createV5Fixture({ invalid: true }));
   const malformedBefore = await captureSnapshot(page);
   await assert.rejects(() => page.evaluate(() => openDB()), /Abort|Invalid|conversion|image|base64/i);
