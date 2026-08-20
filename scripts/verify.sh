@@ -38,6 +38,30 @@ while IFS= read -r f; do
 done < <(find public/js api -name '*.js' -type f 2>/dev/null | sort)
 [ "$js_bad" -eq 0 ] && ok "JS ${js_n}개 문법 OK"
 
+# ①b STORAGE2 결정론적 계약 스위트 ------------------------------------------
+# Keep running every suite after a failure so the verifier reports the full
+# gate result instead of masking later failures behind the first one.
+hdr "STORAGE2 결정론적 테스트"
+storage2_n=0; storage2_bad=0
+run_storage2_suite() {
+  local f="$1" output status
+  storage2_n=$((storage2_n+1))
+  output=$(node "$f" 2>&1)
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    ok "STORAGE2: $f"
+  else
+    red "STORAGE2: $f"
+    printf '%s\n' "$output" | sed 's/^/      /'
+    storage2_bad=$((storage2_bad+1))
+  fi
+}
+run_storage2_suite scripts/test_note_images.js
+run_storage2_suite scripts/test_storage2_task4_ui.js
+run_storage2_suite scripts/test_storage2_sync.js
+run_storage2_suite scripts/test_storage2_lifecycle.js
+[ "$storage2_bad" -eq 0 ] && ok "STORAGE2 결정론적 테스트 ${storage2_n}개 통과"
+
 # ② 모지바케 (U+FFFD) — 추적 텍스트 전체 -----------------------------------
 hdr "한글 모지바케 스캔 (U+FFFD)"
 FFFD=$(printf '\xEF\xBF\xBD')

@@ -16,7 +16,7 @@ assert_contains public/js/recorder.js "'users/' + currentUser.uid + '/recordings
 assert_absent public/js/storage.js "storage.ref(" "storage.js는 Firebase Storage를 건드리지 않음"
 
 # ── ②③④ 🟡4 마이그레이션 사다리 ──────────────────────────────────────────
-assert_contains public/js/constants.js "const DB_VERSION = 5" "DB_VERSION=5"
+assert_contains public/js/constants.js "const DB_VERSION = 6" "DB_VERSION=6"
 assert_contains public/js/storage.js "e.oldVersion" "onupgradeneeded에 oldVersion 분기 존재"
 # 리터럴로 `.objectStore(name)`을 핀하면 구현의 *변수명*을 고정해 리팩터 한 번에 빨개진다.
 # 핀해야 할 것은 이름이 아니라 「인덱스를 versionchange 트랜잭션으로 연 스토어에 추가한다」는 사실.
