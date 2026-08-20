@@ -67,8 +67,7 @@ function computeAutoNoteTitle() {
 // saves (silent draft, then user-confirmed finalize) can't drift out of sync
 // when a field gets added to notes later.
 function buildNoteSaveFields({ title, folderId }) {
-  const runtimeNotesHtml = document.getElementById('finalNotesBody')?.innerHTML || '';
-  const notesHtml = stripNoteImagePayloads({ notesHtml: runtimeNotesHtml }).notesHtml || '';
+  const notesHtml = document.getElementById('finalNotesBody')?.innerHTML || '';
   // Phase 3B-4: pick up the most-recent recorder audio path so the note
   // doc knows which Storage object backs it. Cleared by the caller after a
   // successful save so the path doesn't leak into the next unrelated note.
@@ -89,10 +88,13 @@ function buildNoteSaveFields({ title, folderId }) {
 }
 
 function showImageDegradationWarning(saveResult) {
-  if (!saveResult || saveResult.saveStatus !== 'image-degraded'
-      || saveResult.degradation?.resource !== 'noteImages'
-      || saveResult.degradation?.reason !== 'quota') return false;
-  showToast('⚠️ 이미지를 저장하지 못했습니다. 노트 내용은 저장되었습니다. 로그인하면 Firebase Storage로 이미지를 옮길 수 있습니다.');
+  const result = saveResult?.localSaveResult?.saveStatus === 'image-degraded'
+    ? saveResult.localSaveResult
+    : saveResult;
+  if (!result || result.saveStatus !== 'image-degraded'
+      || result.degradation?.resource !== 'noteImages'
+      || result.degradation?.reason !== 'quota') return false;
+  showToast('⚠️ 이미지 저장이 완료되지 않았습니다. 노트 내용은 저장되었습니다. 저장 공간을 정리한 뒤 다시 저장해 주세요.');
   return true;
 }
 
@@ -112,6 +114,7 @@ async function draftSaveNote() {
     record = await saveNoteFS(Object.assign(fields, { sortOrder: await getNextSortOrder(null) }));
     showImageDegradationWarning(record);
   } catch (e) {
+    showImageDegradationWarning(e);
     console.error('[draftSaveNote] failed:', e);
     return;
   } finally {
@@ -167,6 +170,7 @@ async function autoSaveNote() {
     showSuccessToast('💾 저장 완료');
     renderHomeView();
   } catch (e) {
+    showImageDegradationWarning(e);
     console.error('autoSaveNote error:', e);
   }
 }
@@ -415,6 +419,7 @@ async function moveSavedNote(id) {
         showImageDegradationWarning(saveResult);
         showSuccessToast(`📁 "${note.title || '노트'}" 이동 완료`);
       } catch (e) {
+        showImageDegradationWarning(e);
         console.warn('moveSavedNote save failed:', e);
         showToast('❌ 폴더 이동 실패: ' + e.message);
       } finally {
@@ -581,7 +586,8 @@ function showImportNoteModal() {
           source:    'import',
           extractedImages: [],
         };
-        await saveNote(note);
+        const saveResult = await saveNote(note);
+        showImageDegradationWarning(saveResult);
         const ref = userNotesRef();
         if (ref) {
           const updatedAt = new Date().toISOString();
@@ -613,7 +619,8 @@ async function renameSavedNote(id) {
 
   // Update IndexedDB local cache
   const updated = Object.assign({}, note, { title: trimmedTitle, updatedAt });
-  await saveNote(updated);
+  const saveResult = await saveNote(updated);
+  showImageDegradationWarning(saveResult);
 
   // Patch only title + updatedAt to Firestore (no image re-upload).
   // safeNotePartialUpdate refuses to create a ghost doc when the Firestore
@@ -674,6 +681,7 @@ async function importNotes(input) {
     showSuccessToast(`⬆ ${imported}개 노트 가져오기 완료`);
     renderHomeView();
   } catch (e) {
+    showImageDegradationWarning(e);
     showToast(`❌ 가져오기 실패: ${e.message}`);
   }
 }

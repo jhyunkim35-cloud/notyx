@@ -158,7 +158,7 @@ try {
     dbVersion: typeof DB_VERSION === 'number' ? DB_VERSION : null,
   }));
   assert.equal(runtime.productionConstantsLoaded, true, 'fixture must execute public/js/constants.js');
-  assert.deepEqual(runtime.scriptOrder, ['fixture-helpers', 'constants', 'note_images', 'storage'],
+    assert.deepEqual(runtime.scriptOrder, ['fixture-helpers', 'constants', 'note_images', 'storage', 'firestore_sync'],
     'fixture scripts must load production constants before Task 1 and storage');
   assert.equal(runtime.dbName, 'meetingAppDB', 'fixture must use the production DB name');
 
@@ -357,6 +357,157 @@ try {
     'getNote must read exactly the requested noteImages key');
   assert.equal(oneNoteTrace.some(entry => entry.storeName === 'noteImages' && entry.operation === 'getAll'), false,
     'getNote must not scan noteImages');
+
+  const htmlOnlyInput = {
+    id: 'task4-html-only',
+    title: 'Task 4 HTML only',
+    notesText: 'HTML-only image ownership.',
+    notesHtml: '<p>HTML only</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="html-only">',
+  };
+  await page.evaluate(note => saveNote(note), htmlOnlyInput);
+  const htmlOnlyLightweight = await page.evaluate(async () => (await getAllNotes()).find(note => note.id === 'task4-html-only'));
+  assert.doesNotMatch(htmlOnlyLightweight.notesHtml, /data:image\//i,
+    'HTML-only persisted notesHtml must not contain a data URL');
+  assert.match(htmlOnlyLightweight.notesHtml, /data-note-image-ref="note-image-0"/);
+  const htmlOnlyRecord = await page.evaluate(() => window.__storage2ReadImageRecord('task4-html-only'));
+  assert.deepEqual(htmlOnlyRecord.images.map(image => [image.field, image.index, image.markerId]), [['html', 0, 'note-image-0']],
+    'HTML-only local images must have one detached HTML owner');
+  const htmlOnlyOpen = await page.evaluate(() => getNote('task4-html-only'));
+  assert.match(htmlOnlyOpen.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/,
+    'HTML-only local images must hydrate on open');
+  await page.evaluate(async () => {
+    const hydrated = await getNote('task4-html-only');
+    hydrated.title = 'Task 4 HTML update';
+    await saveNote(hydrated);
+  });
+  const htmlOnlyUpdatedRecord = await page.evaluate(() => window.__storage2ReadImageRecord('task4-html-only'));
+  assert.equal(htmlOnlyUpdatedRecord.images.length, 1,
+    're-saving hydrated HTML must not grow duplicate HTML owners');
+
+  await page.evaluate(() => saveNote({
+    id: 'task4-subset',
+    title: 'Task 4 sparse subset',
+    notesText: 'Sparse subset image ownership.',
+    extractedImages: [, , { slideNumber: 3, imageBase64: 'data:image/png;base64,iVBORw0KGgo=', mimeType: 'image/png' }],
+    notesHtml: '<img src="data:image/png;base64,iVBORw0KGgo=" data-note-image-ref="note-image-2">',
+  }));
+  const subsetLightweight = await page.evaluate(async () => {
+    const note = (await getAllNotes()).find(candidate => candidate.id === 'task4-subset');
+    return { note, hasIndex0: 0 in note.extractedImages, hasIndex2: 2 in note.extractedImages };
+  });
+  assert.equal(subsetLightweight.hasIndex2, true);
+  assert.equal(subsetLightweight.hasIndex0, false);
+  assert.equal(subsetLightweight.note.extractedImages[2].markerId, 'note-image-2');
+  assert.equal((await page.evaluate(() => window.__storage2ReadImageRecord('task4-subset'))).images.length, 1,
+    'subset HTML marker must share the extracted owner');
+  const subsetOpen = await page.evaluate(async () => {
+    const note = await getNote('task4-subset');
+    return { note, hasIndex0: 0 in note.extractedImages, hasIndex2: 2 in note.extractedImages };
+  });
+  assert.equal(subsetOpen.hasIndex2, true, 'subset image must restore at index 2');
+  assert.equal(subsetOpen.hasIndex0, false, 'subset image must not restore at index 0');
+  assert.match(subsetOpen.note.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/);
+  await page.evaluate(async () => {
+    const hydrated = await getNote('task4-subset');
+    hydrated.extractedImages = [hydrated.extractedImages[1], , hydrated.extractedImages[2]];
+    await saveNote(hydrated);
+  });
+  const subsetReorderedRecord = await page.evaluate(() => window.__storage2ReadImageRecord('task4-subset'));
+  assert.deepEqual(subsetReorderedRecord.images.map(image => [image.field, image.index, image.markerId]),
+    [['extractedImages', 2, 'note-image-2']],
+    'reordered hydrated saves preserve sparse owner identity without HTML duplicates');
+
+  await page.evaluate(async () => {
+    currentUser = { uid: 'task4-auth-user' };
+    Object.assign(db, {
+      collection() {
+        return { doc() {
+          return { collection() {
+            return { doc() {
+              return { get: async () => ({
+                exists: true,
+                data: () => ({ id: 'task4-subset', title: 'Firestore title', notesText: 'Firestore metadata text', slideImageUrls: [null, 'https://cdn.example.test/remote.png', null] }),
+              }) };
+            } };
+          } };
+        } };
+      },
+    });
+  });
+  const authenticatedReconciled = await page.evaluate(() => getNoteFS('task4-subset'));
+  assert.equal(authenticatedReconciled.title, 'Firestore title',
+    'authenticated open must use Firestore metadata truth');
+  assert.equal(2 in authenticatedReconciled.extractedImages, true,
+    'authenticated open must retain the local detached sparse owner');
+  assert.match(authenticatedReconciled.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/,
+    'authenticated open must restore local image sources');
+  await page.evaluate(() => { currentUser = null; delete db.collection; });
+
+  const degradedRemoteCases = await page.evaluate(async () => {
+    const originalPut = IDBObjectStore.prototype.put;
+    const fakeDb = (setImpl) => ({
+      collection() {
+        return { doc() {
+          return { collection() {
+            return { doc() { return { set: setImpl }; } };
+          } };
+        } };
+      },
+    });
+    currentUser = { uid: 'task4-degraded-user' };
+    let injected = false;
+    IDBObjectStore.prototype.put = function () {
+      if (this.name === 'noteImages' && !injected) {
+        injected = true;
+        throw new DOMException('fixture quota failure', 'QuotaExceededError');
+      }
+      return originalPut.apply(this, arguments);
+    };
+    Object.assign(db, fakeDb(async () => {}));
+    let oversized;
+    try {
+      oversized = await saveNoteFS({
+        id: 'task4-oversized-local',
+        title: 'Oversized degraded local',
+        notesText: 'Text survives.',
+        pptText: 'x'.repeat(960000),
+        notesHtml: '<img src="data:image/png;base64,iVBORw0KGgo=">',
+      });
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+    let remoteError;
+    injected = false;
+    IDBObjectStore.prototype.put = function () {
+      if (this.name === 'noteImages' && !injected) {
+        injected = true;
+        throw new DOMException('fixture quota failure', 'QuotaExceededError');
+      }
+      return originalPut.apply(this, arguments);
+    };
+    Object.assign(db, fakeDb(async () => { throw new Error('remote write failed'); }));
+    try {
+      await saveNoteFS({
+        id: 'task4-remote-error',
+        title: 'Remote degraded error',
+        notesText: 'Text survives remote failure.',
+        notesHtml: '<img src="data:image/png;base64,iVBORw0KGgo=">',
+      });
+    } catch (error) {
+      remoteError = { saveStatus: error.saveStatus, degradation: error.degradation, message: error.message };
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+      currentUser = null;
+      delete db.collection;
+    }
+    return { oversized, remoteError };
+  });
+  assert.equal(degradedRemoteCases.oversized.saveStatus, 'image-degraded',
+    'oversized Firestore documents must preserve degraded local-save status');
+  assert.deepEqual(degradedRemoteCases.oversized.degradation, { resource: 'noteImages', reason: 'quota' });
+  assert.equal(degradedRemoteCases.remoteError.saveStatus, 'image-degraded',
+    'remote errors after degraded local saves must carry the local status');
+  assert.deepEqual(degradedRemoteCases.remoteError.degradation, { resource: 'noteImages', reason: 'quota' });
 
   const priorPayloadImages = await page.evaluate(() => window.__storage2ReadImageRecord('payload-note'));
   const omittedLightweightBefore = await page.evaluate(async () => {

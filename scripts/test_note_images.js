@@ -171,6 +171,37 @@ async function run() {
   assert.match(hydrated.notesHtml, /data-note-image-ref="note-image-2"/);
   assert.equal(detached.note.notesHtml.includes('data:image/'), false, 'hydration does not mutate lightweight note');
 
+  const subsetSource = {
+    id: 'subset-owner',
+    extractedImages: [
+      ,
+      { slideNumber: 1, imageBase64: REMOTE_URL, mimeType: 'url' },
+      { slideNumber: 3, imageBase64: PNG_DATA_URL, mimeType: 'image/png', markerId: 'note-image-2' },
+    ],
+    notesHtml: `<img src="${PNG_DATA_URL}" data-note-image-ref="note-image-2">` +
+      `<img src="${REMOTE_URL}" data-note-image-ref="remote-slide-1">`,
+  };
+  const subsetDetached = detachNoteImages(subsetSource);
+  const subsetOwner = subsetDetached.imageRecord.images.find(image => image.field === 'extractedImages');
+  assert.equal(subsetOwner.index, 2, 'sparse extracted owner keeps its source index');
+  assert.equal(subsetOwner.markerId, 'note-image-2', 'gallery marker stays attached to sparse owner');
+  assert.equal(subsetDetached.imageRecord.images.filter(image => image.field === 'html').length, 0,
+    'HTML referencing an array owner must not create a duplicate HTML Blob');
+  const subsetHydrated = await hydrateNoteImages(subsetDetached.note, subsetDetached.imageRecord);
+  assert.equal(2 in subsetHydrated.extractedImages, true, 'sparse owner hydrates at its original index');
+  assert.equal(0 in subsetHydrated.extractedImages, false, 'sparse owner must not move to index zero');
+  assert.match(subsetHydrated.notesHtml, /data-note-image-ref="note-image-2"/);
+  assert.match(subsetHydrated.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/);
+
+  const subsetRepeated = detachNoteImages(subsetHydrated, subsetDetached.imageRecord);
+  assert.equal(subsetRepeated.imageRecord.images.length, subsetDetached.imageRecord.images.length,
+    'hydrated updates must not grow detached ownership records');
+  assert.deepEqual(
+    subsetRepeated.imageRecord.images.map(image => [image.field, image.index, image.markerId]),
+    subsetDetached.imageRecord.images.map(image => [image.field, image.index, image.markerId]),
+    'hydrated updates preserve ownership markers and indexes',
+  );
+
   const sharedOwner = detachNoteImages({
     id: 'shared-owner',
     extractedImages: [{ slideNumber: 1, imageBase64: PNG_BASE64, mimeType: 'image/png', fileName: 'shared.png' }],

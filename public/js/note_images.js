@@ -227,6 +227,13 @@ function noteImageFieldIntent(note, field) {
   return Array.isArray(note[field]) && note[field].length > 0 ? 'replace' : 'delete';
 }
 
+function noteImageDefaultMarker(field, index) {
+  // Extracted-image markers are intentionally tied to the sparse source
+  // index. Gallery HTML can therefore refer to index 2 without collapsing
+  // the owner to the first selected image.
+  return field === 'extractedImages' ? 'note-image-' + index : '';
+}
+
 function noteImageHtmlIntent(note) {
   if (!Object.prototype.hasOwnProperty.call(note, 'notesHtml')) return 'preserve';
   return typeof note.notesHtml === 'string' && note.notesHtml.length > 0 ? 'replace' : 'delete';
@@ -294,8 +301,11 @@ function noteImageCollection(note, field, workingEntries) {
     }
     var sourceInfo = noteImageSourceInfo(entry);
     if (sourceInfo && sourceInfo.kind === 'local') {
-      workingEntries.push(noteImageRecordEntry(entry, field, index, sourceInfo));
+      var recordEntry = noteImageRecordEntry(entry, field, index, sourceInfo);
+      if (!recordEntry.markerId) recordEntry.markerId = noteImageDefaultMarker(field, index);
+      workingEntries.push(recordEntry);
       output[index] = noteImageLocalMetadataEntry(entry);
+      if (recordEntry.markerId) output[index].markerId = recordEntry.markerId;
     } else {
       output[index] = noteImageLightweightEntry(entry, sourceInfo);
     }
@@ -319,7 +329,37 @@ function noteImageReplaceHtmlSources(html, workingEntries) {
       if (!noteImageLooksLikeRawBase64(value, inferredMimeType)) return whole;
       sourceInfo = noteImageSourceInfo({ imageBase64: value, mimeType: inferredMimeType });
     }
+    var markerMatch = /\bdata-note-image-ref\s*=\s*(?:(["])([^"]+)\1|([^\s>]+))/i.exec(attrs);
+    var requestedMarker = markerMatch ? (markerMatch[2] !== undefined ? markerMatch[2] : markerMatch[3]) : '';
+    var arrayOwner = requestedMarker && workingEntries.find(function (entry) {
+      return entry.field !== 'html' && entry.markerId === requestedMarker;
+    });
+    if (arrayOwner) {
+      // The gallery marker points at the array owner. Remove an older HTML
+      // alias with the same marker so hydrated saves cannot grow duplicates.
+      for (var ownerIndex = workingEntries.length - 1; ownerIndex >= 0; ownerIndex -= 1) {
+        if (workingEntries[ownerIndex].field === 'html'
+            && workingEntries[ownerIndex].markerId === requestedMarker) {
+          workingEntries.splice(ownerIndex, 1);
+        }
+      }
+      var sharedAttrs = attrs.replace(/\s*src\s*=\s*(?:(['"])[^'"]*\1|[^\s>]+)/i, '');
+      return '<img' + sharedAttrs + ' src="" data-note-image-ref="' + requestedMarker + '">';
+    }
+    var existingHtml = requestedMarker && workingEntries.find(function (entry) {
+      return entry.field === 'html' && entry.markerId === requestedMarker;
+    });
+    if (existingHtml) {
+      var replacement = noteImageRecordEntry({}, 'html', htmlIndex, sourceInfo);
+      replacement.markerId = requestedMarker;
+      Object.assign(existingHtml, replacement);
+      htmlIndex += 1;
+      var existingAttrs = attrs.replace(/\s*data-note-image-ref\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i, '');
+      existingAttrs = existingAttrs.replace(/\s*src\s*=\s*(?:(['"])[^'"]*\1|[^\s>]+)/i, '');
+      return '<img' + existingAttrs + ' src="" data-note-image-ref="' + requestedMarker + '">';
+    }
     var existing = noteImageRecordEntry({}, 'html', htmlIndex, sourceInfo);
+    if (requestedMarker) existing.markerId = requestedMarker;
     workingEntries.push(existing);
     htmlIndex += 1;
     var token = '__NOTE_IMAGE_REF_' + workingEntries.indexOf(existing) + '__';

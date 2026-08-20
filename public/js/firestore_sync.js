@@ -21,6 +21,16 @@ function sanitizeFolderColor(color) {
   const allowed = FOLDER_COLORS.some(c => c.value === color);
   return allowed ? color : null;
 }
+
+function _carryLocalImageDegradation(error, localSaveResult) {
+  if (!localSaveResult || localSaveResult.saveStatus !== 'image-degraded') return error;
+  const decorated = error instanceof Error ? error : new Error(String(error || 'Remote note save failed'));
+  decorated.saveStatus = localSaveResult.saveStatus;
+  decorated.degradation = localSaveResult.degradation;
+  decorated.localSaveResult = localSaveResult;
+  return decorated;
+}
+
 async function saveNoteFS(note) {
   // ───── GHOST NOTE DIAGNOSTIC (temp, remove after debugging) ─────
   const _hasTitle = note && note.title && note.title.trim();
@@ -50,8 +60,9 @@ async function saveNoteFS(note) {
 
   // If logged in, upload images to Storage and save to Firestore
   const ref = userNotesRef();
-  if (ref) {
-    const toSave = Object.assign({}, record);
+  try {
+    if (ref) {
+      const toSave = Object.assign({}, record);
     delete toSave.notesHtml;
     // A2 fix: Don't blindly run all images through uploadSlideImages.
     //
@@ -103,10 +114,13 @@ async function saveNoteFS(note) {
     if (finalSize > 950000) {
       console.error('saveNoteFS: STILL too large after all strips:', finalSize,
         Object.keys(toSave).map(k => k + ':' + JSON.stringify(toSave[k] || '').length).join(', '));
-      return record; // skip Firestore write, IndexedDB already saved
+      return Object.assign({}, record, localSaveResult); // skip Firestore write, IndexedDB already saved
     }
 
-    await ref.doc(id).set(toSave, { merge: true });
+      await ref.doc(id).set(toSave, { merge: true });
+    }
+  } catch (error) {
+    throw _carryLocalImageDegradation(error, localSaveResult);
   }
   return Object.assign({}, record, localSaveResult);
 }
@@ -149,20 +163,24 @@ async function getNoteFS(id) {
   try {
     const doc = await ref.doc(id).get();
     if (doc.exists) {
-      const data = _hydrateNoteForViewer(doc.data());
-      // Mirror to IDB for offline. Use the lower-level put so we bypass
-      // saveNote's ghost guard — Firestore data is canonical even if the
-      // title is somehow blank, the user can still see it.
+      const rawData = doc.data() || {};
+      const data = _hydrateNoteForViewer(Object.assign({}, rawData));
+      const local = await getNote(id).catch(() => null);
+      const remoteHasDetachedArrays = Object.prototype.hasOwnProperty.call(rawData, 'extractedImages')
+        || Object.prototype.hasOwnProperty.call(rawData, 'slideImages');
+      const metadata = Object.assign({}, data, { id });
+      if (local && !remoteHasDetachedArrays) {
+        delete metadata.extractedImages;
+        delete metadata.slideImages;
+        // The local one-note read has marker-resolved HTML and is the only
+        // safe source for detached image ownership.
+        if (typeof local.notesHtml === 'string') metadata.notesHtml = local.notesHtml;
+      }
       try {
-        const conn = await openDB();
-        await new Promise((res, rej) => {
-          const tx = conn.transaction('notes', 'readwrite');
-          tx.objectStore('notes').put(data);
-          tx.oncomplete = res;
-          tx.onerror = e => rej(e.target.error);
-        });
-      } catch (e) { /* IDB mirror is best-effort */ }
-      return data;
+        await saveNote(metadata);
+      } catch (e) { /* metadata mirror is best-effort; local data remains usable */ }
+      if (local) return Object.assign({}, local, metadata);
+      return getNote(id).catch(() => data);
     }
     // Doc doesn't exist on Firestore — fall back to IDB so notes the user
     // is actively editing locally (not yet pushed) still open.
