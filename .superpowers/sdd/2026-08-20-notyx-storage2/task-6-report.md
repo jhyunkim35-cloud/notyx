@@ -149,47 +149,6 @@ Implementation commit SHA: `f9e6a233fd222fedf34ced4330ecb0e949866d91`.
 - No billing files were changed.
 - Protected unrelated paths, plans/spec documents, and `public/img/` remain outside the task scope.
 
-## Fix Round 4/5
-
-### RED
-
-The new duplicate-alias regression initially reproduced the compatibility gap:
-
-```text
-node scripts/test_storage2_lifecycle.js
-```
-
-```text
-AssertionError [ERR_ASSERTION]: Missing expected exception: conflicting string aliases must reject before any write
-```
-
-The pre-fix validator accepted differing recognized aliases because it validated each value independently without comparing their canonical source identity.
-
-### GREEN
-
-Round 4 now collects every non-empty recognized direct legacy source alias. String aliases compare by normalized remote source or canonical MIME plus decoded bytes; Blob aliases are accepted only when they reference the same Blob object, and mixed/different Blob cases fail closed without asynchronous comparison. Equivalent raw-base64 and data-URL aliases remain accepted and preserve exact bytes through detach/hydrate.
-
-Verification commands and exact results:
-
-- `node --check public/js/storage.js; node --check public/js/notes_crud.js; node --check public/js/firestore_sync.js; node --check scripts/test_storage2_lifecycle.js; node --check scripts/test_storage2_sync.js; node --check scripts/test_storage2_browser.mjs; node --check scripts/test_storage2_task4_ui.js` — exit 0.
-- `node scripts/test_storage2_lifecycle.js` — `STORAGE2 lifecycle: PASS`.
-- `node scripts/test_note_images.js` — `note images: 8 checks passed`.
-- `node scripts/test_storage2_task4_ui.js` — `STORAGE2 Task 4 UI: GREEN contract checks passed`.
-- `node scripts/test_storage2_sync.js` — `STORAGE2 sync: PASS (Task 5 payload-safe Firestore and sync contracts)`.
-- `node scripts/test_storage2_browser.mjs` — `STORAGE2 Chromium IndexedDB: PASS (v5 fixture, v6 cursor migration, reopen convergence, abort safety)`.
-- `C:\Program Files\Git\bin\bash.exe -lc 'export PATH=/usr/bin:/bin:/mingw64/bin:$PATH; ./scripts/verify.sh'` — `ALL GREEN`; 59 JS files checked, cache version `storage2task6r5`, live smoke omitted.
-- `git diff --check` — exit 0; only expected CRLF conversion warnings were emitted for changed text files.
-
-### Commit
-
-Implementation commit SHA: pending.
-
-### Concerns
-
-- Live verification was intentionally omitted; `verify.sh` was run without `--live`.
-- No billing files were changed.
-- Protected unrelated paths, plans/spec documents, and `public/img/` remain outside the task scope.
-
 ## Fix Round 3/5
 
 ### RED
@@ -226,6 +185,88 @@ Verification commands and exact results:
 ### Commit
 
 Implementation commit SHA: `05abc225e8fa0a10da24c6698b26d1e19dc86bea`.
+
+### Concerns
+
+- Live verification was intentionally omitted; `verify.sh` was run without `--live`.
+- No billing files were changed.
+- Protected unrelated paths, plans/spec documents, and `public/img/` remain outside the task scope.
+
+## Fix Round 4/5
+
+### RED
+
+The new duplicate-alias regression initially reproduced the compatibility gap:
+
+```text
+node scripts/test_storage2_lifecycle.js
+```
+
+```text
+AssertionError [ERR_ASSERTION]: Missing expected exception: conflicting string aliases must reject before any write
+```
+
+The pre-fix validator accepted differing recognized aliases because it validated each value independently without comparing their canonical source identity.
+
+### GREEN
+
+Round 4 now collects every non-empty recognized direct legacy source alias. String aliases compare by normalized remote source or canonical MIME plus decoded bytes; Blob aliases are accepted only when they reference the same Blob object, and mixed/different Blob cases fail closed without asynchronous comparison. Equivalent raw-base64 and data-URL aliases remain accepted and preserve exact bytes through detach/hydrate.
+
+Verification commands and exact results:
+
+- `node --check public/js/storage.js; node --check public/js/notes_crud.js; node --check public/js/firestore_sync.js; node --check scripts/test_storage2_lifecycle.js; node --check scripts/test_storage2_sync.js; node --check scripts/test_storage2_browser.mjs; node --check scripts/test_storage2_task4_ui.js` — exit 0.
+- `node scripts/test_storage2_lifecycle.js` — `STORAGE2 lifecycle: PASS`.
+- `node scripts/test_note_images.js` — `note images: 8 checks passed`.
+- `node scripts/test_storage2_task4_ui.js` — `STORAGE2 Task 4 UI: GREEN contract checks passed`.
+- `node scripts/test_storage2_sync.js` — `STORAGE2 sync: PASS (Task 5 payload-safe Firestore and sync contracts)`.
+- `node scripts/test_storage2_browser.mjs` — `STORAGE2 Chromium IndexedDB: PASS (v5 fixture, v6 cursor migration, reopen convergence, abort safety)`.
+- `C:\Program Files\Git\bin\bash.exe -lc 'export PATH=/usr/bin:/bin:/mingw64/bin:$PATH; ./scripts/verify.sh'` — `ALL GREEN`; 59 JS files checked, cache version `storage2task6r5`, live smoke omitted.
+- `git diff --check` — exit 0; only expected CRLF conversion warnings were emitted for changed text files.
+
+### Commit
+
+Implementation commit SHA: `4bab4f72ec16c065f91adfd21595baead859ff62`.
+
+### Concerns
+
+- Live verification was intentionally omitted; `verify.sh` was run without `--live`.
+- No billing files were changed.
+- Protected unrelated paths, plans/spec documents, and `public/img/` remain outside the task scope.
+
+## Fix Round 5/5
+
+### RED
+
+The final remote-alias regression reproduced the authority over-normalization:
+
+```text
+node scripts/test_storage2_lifecycle.js
+```
+
+```text
+AssertionError [ERR_ASSERTION]: Missing expected exception: remote aliases with credential case differences must reject
+```
+
+The previous implementation lowercased the full authority, so credential case was incorrectly treated as equivalent.
+
+### GREEN
+
+Round 5 now uses standards-based WHATWG URL parsing. Absolute and protocol-relative URLs have separate equivalence domains; protocol and hostname receive normal URL canonicalization, while username, password, path, query, and fragment retain URL semantics. Parse uncertainty rejects the source. Lifecycle coverage verifies host/protocol equivalence, path and credential conflicts, protocol-relative isolation, same-object Blob compatibility, different-Blob rejection despite equal bytes, and zero folder/note writes through `importNotes()`.
+
+Verification commands and exact results:
+
+- `node --check public/js/storage.js; node --check public/js/notes_crud.js; node --check public/js/firestore_sync.js; node --check scripts/test_storage2_lifecycle.js; node --check scripts/test_storage2_sync.js; node --check scripts/test_storage2_browser.mjs; node --check scripts/test_storage2_task4_ui.js` — exit 0.
+- `node scripts/test_storage2_lifecycle.js` — `STORAGE2 lifecycle: PASS`.
+- `node scripts/test_note_images.js` — `note images: 8 checks passed`.
+- `node scripts/test_storage2_task4_ui.js` — `STORAGE2 Task 4 UI: GREEN contract checks passed`.
+- `node scripts/test_storage2_sync.js` — `STORAGE2 sync: PASS (Task 5 payload-safe Firestore and sync contracts)`.
+- `node scripts/test_storage2_browser.mjs` — `STORAGE2 Chromium IndexedDB: PASS (v5 fixture, v6 cursor migration, reopen convergence, abort safety)`.
+- `C:\Program Files\Git\bin\bash.exe -lc 'export PATH=/usr/bin:/bin:/mingw64/bin:$PATH; ./scripts/verify.sh'` — `ALL GREEN`; 59 JS files checked, cache version `storage2task6r6`, live smoke omitted.
+- `git diff --check` — exit 0; only expected CRLF conversion warnings were emitted for changed text files.
+
+### Commit
+
+Implementation commit SHA: pending.
 
 ### Concerns
 

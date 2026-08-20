@@ -4,6 +4,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 function loadContext() {
+  class FixtureURL extends URL {}
+  FixtureURL.createObjectURL = () => 'blob:fixture';
+  FixtureURL.revokeObjectURL = () => {};
   const testConsole = {
     log() {},
     trace() {},
@@ -21,7 +24,7 @@ function loadContext() {
     TextEncoder,
     TextDecoder,
     window: {},
-    URL: { createObjectURL: () => 'blob:fixture', revokeObjectURL() {} },
+    URL: FixtureURL,
     firebase: {
       firestore() {
         return {
@@ -264,6 +267,49 @@ async function run() {
   assert.equal(equivalentHydrated.extractedImages[0].imageBase64, 'iVBORw0KGgo=',
     'equivalent raw/data aliases preserve exact bytes through detach/hydrate');
 
+  const equivalentRemotePlan = context._buildImportPlan({ notes: [{
+    id: 'legacy-equivalent-remote-aliases', title: 'Equivalent remote aliases', notesText: 'Keep URL',
+    extractedImages: [{ imageBase64: 'HTTP://CDN.EXAMPLE.test/remote.png', src: 'http://cdn.example.test/remote.png' }],
+  }] });
+  assert.equal(equivalentRemotePlan.notes[0].note.extractedImages[0].imageBase64,
+    'HTTP://CDN.EXAMPLE.test/remote.png', 'protocol/host case-only remote aliases remain compatible');
+  const protocolRelativePlan = context._buildImportPlan({ notes: [{
+    id: 'legacy-equivalent-protocol-relative-aliases', title: 'Equivalent protocol-relative aliases', notesText: 'Keep URL',
+    extractedImages: [{ imageBase64: '//CDN.EXAMPLE.test/remote.png', src: '//cdn.example.test/remote.png' }],
+  }] });
+  assert.equal(protocolRelativePlan.notes[0].note.extractedImages[0].imageBase64,
+    '//CDN.EXAMPLE.test/remote.png', 'protocol-relative aliases compare within their own URL kind');
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-mixed-remote-url-kinds', title: 'Mixed remote URL kinds', notesText: 'Must reject',
+    extractedImages: [{ imageBase64: '//cdn.example.test/remote.png', src: 'https://cdn.example.test/remote.png' }],
+  }] }), /conflicting image sources/,
+  'protocol-relative and absolute URLs must not be merged implicitly');
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-conflicting-remote-path', title: 'Conflicting remote path', notesText: 'Must reject',
+    extractedImages: [{ imageBase64: 'https://cdn.example.test/a.png', src: 'https://cdn.example.test/b.png' }],
+  }] }), /conflicting image sources/,
+  'remote aliases with different paths must reject');
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-conflicting-remote-credentials', title: 'Conflicting remote credentials', notesText: 'Must reject',
+    extractedImages: [{ imageBase64: 'https://User:Pass@cdn.example.test/a.png', src: 'https://user:Pass@cdn.example.test/a.png' }],
+  }] }), /conflicting image sources/,
+  'remote aliases with credential case differences must reject');
+
+  const sameBlob = new context.Blob(['same bytes'], { type: 'image/png' });
+  const sameBlobPlan = context._buildImportPlan({ notes: [{
+    id: 'legacy-same-blob-aliases', title: 'Same Blob aliases', notesText: 'Keep Blob',
+    extractedImages: [{ data: sameBlob, blob: sameBlob }],
+  }] });
+  assert.equal(sameBlobPlan.notes[0].note.extractedImages[0].data, sameBlob,
+    'the same Blob object in multiple aliases remains compatible');
+  const firstBlob = new context.Blob(['same bytes'], { type: 'image/png' });
+  const secondBlob = new context.Blob(['same bytes'], { type: 'image/png' });
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-different-blob-aliases', title: 'Different Blob aliases', notesText: 'Must reject',
+    extractedImages: [{ data: firstBlob, blob: secondBlob }],
+  }] }), /conflicting image sources/,
+  'different Blob objects reject even when their bytes match');
+
   const detachedRoundTrip = context.detachNoteImages({
     id: 'byte-round-trip',
     title: 'Byte round trip',
@@ -358,6 +404,13 @@ async function run() {
     id: 'legacy-non-img-html-payload', title: 'Legacy HTML payload', notesText: 'Must reject',
     notesHtml: '<p data-image="data:image/png;base64,iVBORw0KGgo=">text</p>',
   }] }, 'legacy non-img HTML payload');
+  await assertRejectedImport({
+    folders: [{ id: 'should-not-write', name: 'Should not write' }],
+    notes: [{
+      id: 'legacy-import-conflicting-remote-credentials', title: 'Conflicting remote credentials', notesText: 'Must reject',
+      extractedImages: [{ imageBase64: 'https://User:Pass@cdn.example.test/a.png', src: 'https://user:Pass@cdn.example.test/a.png' }],
+    }],
+  }, 'legacy import conflicting remote credentials');
 
   const remoteMarkerNote = {
     id: 'remote-marker-collision', title: 'Remote marker', notesText: 'Remote source',

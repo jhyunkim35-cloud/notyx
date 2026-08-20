@@ -881,9 +881,17 @@ function _validateLegacyDirectSource(value, mimeType, label) {
 
 function _normaliseLegacyRemoteSource(value) {
   const trimmed = String(value).trim();
-  const match = /^(https?:\/\/|\/\/)([^\/?#]*)([\s\S]*)$/i.exec(trimmed);
-  if (!match) return trimmed;
-  return match[1].toLowerCase() + match[2].toLowerCase() + match[3];
+  const isProtocolRelative = trimmed.startsWith('//');
+  if (typeof URL !== 'function' || (!isProtocolRelative && !/^https?:\/\//i.test(trimmed))) return '';
+  try {
+    const parsed = new URL(isProtocolRelative ? 'https:' + trimmed : trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    const href = parsed.href;
+    return (isProtocolRelative ? 'protocol-relative:' : 'absolute:')
+      + (isProtocolRelative ? href.slice(parsed.protocol.length) : href);
+  } catch (error) {
+    return '';
+  }
 }
 
 function _legacyBytesSignature(bytes, mimeType) {
@@ -901,7 +909,9 @@ function _legacyCanonicalSource(value, mimeType, label) {
   if (noteImageIsBlob(value)) return { kind: 'blob', value };
   const source = value.trim();
   if (isRemoteImageSource(source, mimeType)) {
-    return { kind: 'remote', signature: _normaliseLegacyRemoteSource(source) };
+    const signature = _normaliseLegacyRemoteSource(source);
+    if (!signature) _importReject(label + ' must be a valid remote image URL');
+    return { kind: 'remote', signature };
   }
   try {
     if (isDataImageSource(source)) {
