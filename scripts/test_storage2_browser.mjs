@@ -431,6 +431,34 @@ try {
     'marker collision ownership must not grow on a repeated hydrated save');
 
   await page.evaluate(() => saveNote({
+    id: 'task4-direct-blob',
+    title: 'Task 4 direct Blob migration',
+    notesText: 'Direct Blob owners.',
+    extractedImages: [
+      { slideNumber: 1, imageBase64: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' }), mimeType: 'image/png' },
+      { slideNumber: 2, imageBase64: new Blob([new Uint8Array([5, 6, 7, 8])], { type: 'image/png' }), mimeType: 'image/png' },
+    ],
+  }));
+  const directBlobBefore = await page.evaluate(async () => {
+    const record = await window.__storage2ReadImageRecord('task4-direct-blob');
+    return record.images.map(image => [image.markerId, image._sourceSignature]);
+  });
+  assert.notEqual(directBlobBefore[0][1], directBlobBefore[1][1],
+    'Chrome equal-size direct Blobs must have distinct owner fingerprints');
+  const directBlobOpen = await page.evaluate(() => getNote('task4-direct-blob'));
+  assert.notEqual(directBlobOpen.extractedImages[0].imageBase64, directBlobOpen.extractedImages[1].imageBase64,
+    'Chrome equal-size direct Blobs must hydrate to distinct bytes');
+  await page.evaluate(note => saveNote(note), directBlobOpen);
+  const directBlobAfter = await page.evaluate(async () => {
+    const record = await window.__storage2ReadImageRecord('task4-direct-blob');
+    return record.images.map(image => [image.markerId, image._sourceSignature]);
+  });
+  assert.deepEqual(directBlobAfter, directBlobBefore,
+    'Chrome Blob migration through hydrate/save must preserve owner identity');
+  assert.equal(directBlobAfter.length, 2,
+    'Chrome Blob migration must not duplicate owners');
+
+  await page.evaluate(() => saveNote({
     id: 'task4-subset',
     title: 'Task 4 sparse subset',
     notesText: 'Sparse subset image ownership.',

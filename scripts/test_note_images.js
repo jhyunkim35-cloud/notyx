@@ -264,6 +264,30 @@ async function run() {
   assert.match(migratedLegacy.imageRecord.images[0]._sourceSignature, /^v1:\d+:[0-9a-f]{16}$/,
     'legacy ownership signatures are compacted during migration');
 
+  const blobA = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' });
+  const blobB = new Blob([new Uint8Array([5, 6, 7, 8])], { type: 'image/png' });
+  const directBlobDetached = detachNoteImages({
+    id: 'direct-blob-migration',
+    extractedImages: [
+      { slideNumber: 1, imageBase64: blobA, mimeType: 'image/png' },
+      { slideNumber: 2, imageBase64: blobB, mimeType: 'image/png' },
+    ],
+  });
+  const directBlobSignatures = directBlobDetached.imageRecord.images.map(image => image._sourceSignature);
+  assert.notEqual(directBlobSignatures[0], directBlobSignatures[1],
+    'equal-size direct Blobs must retain distinct owner fingerprints');
+  const directBlobHydrated = await hydrateNoteImages(directBlobDetached.note, directBlobDetached.imageRecord);
+  const directBlobResaved = detachNoteImages(directBlobHydrated, directBlobDetached.imageRecord);
+  assert.deepEqual(
+    directBlobResaved.imageRecord.images.map(image => [image.markerId, image._sourceSignature]),
+    directBlobDetached.imageRecord.images.map(image => [image.markerId, image._sourceSignature]),
+    'Blob migration through hydration must preserve markers and owner fingerprints',
+  );
+  assert.equal(directBlobResaved.imageRecord.images.length, 2,
+    'Blob migration through hydration must not duplicate owners');
+  assert.notEqual(directBlobHydrated.extractedImages[0].imageBase64, directBlobHydrated.extractedImages[1].imageBase64,
+    'equal-size direct Blobs must hydrate to their own bytes');
+
   const sharedOwner = detachNoteImages({
     id: 'shared-owner',
     extractedImages: [{ slideNumber: 1, imageBase64: PNG_BASE64, mimeType: 'image/png', fileName: 'shared.png' }],

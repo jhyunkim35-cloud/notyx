@@ -210,12 +210,29 @@ function noteImageCompactifySignature(signature) {
   return noteImageCompactFingerprint('legacy', signature, signature.length);
 }
 
+function noteImageBlobOwnerFingerprint(field, index, markerId, sourceSignature) {
+  return noteImageCompactFingerprint(
+    'blob-owner',
+    String(field) + '|' + String(index) + '|' + String(markerId || '') + '|' + String(sourceSignature || ''),
+    String(index),
+  );
+}
+
+function noteImageEntryOwnerSignature(entry) {
+  if (!entry || typeof entry !== 'object' || typeof entry._sourceSignature !== 'string') return '';
+  var compact = noteImageCompactifySignature(entry._sourceSignature);
+  return /^v1:\d+:[0-9a-f]{16}$/.test(compact) ? compact : '';
+}
+
 function noteImageSourceInfo(entry) {
   var source = noteImageSourceFromEntry(entry);
   if (!source) return null;
+  var ownerSignature = noteImageEntryOwnerSignature(entry);
   if (noteImageIsBlob(source.value)) {
     return {
       kind: 'local',
+      representation: 'blob',
+      ownerSignature: ownerSignature,
       blob: source.value,
       mimeType: source.value.type || source.mimeType || 'application/octet-stream',
       sourceKey: source.sourceKey,
@@ -232,6 +249,8 @@ function noteImageSourceInfo(entry) {
     var parsed = noteImageParseDataUrl(value);
     return {
       kind: 'local',
+      representation: 'data',
+      ownerSignature: ownerSignature,
       blob: dataUrlToBlob(value),
       mimeType: parsed.mimeType,
       sourceKey: source.sourceKey,
@@ -245,6 +264,8 @@ function noteImageSourceInfo(entry) {
   if (noteImageLooksLikeRawBase64(value, source.mimeType)) {
     return {
       kind: 'local',
+      representation: 'data',
+      ownerSignature: ownerSignature,
       blob: dataUrlToBlob('data:' + source.mimeType + ';base64,' + value),
       mimeType: String(source.mimeType).toLowerCase(),
       sourceKey: source.sourceKey,
@@ -258,6 +279,8 @@ function noteImageSourceInfo(entry) {
   if (isRemoteImageSource(value, source.mimeType)) {
     return {
       kind: 'remote',
+      representation: 'remote',
+      ownerSignature: ownerSignature,
       value: value,
       sourceKey: source.sourceKey,
       signature: noteImageCompactFingerprint('url', value, value.length),
@@ -330,7 +353,7 @@ function noteImageRecordEntry(entry, field, index, sourceInfo) {
   metadata.blob = sourceInfo.blob;
   metadata.mimeType = sourceInfo.mimeType || metadata.mimeType || sourceInfo.blob.type || 'application/octet-stream';
   metadata.sourceKey = sourceInfo.sourceKey;
-  metadata._sourceSignature = sourceInfo.signature;
+  metadata._sourceSignature = sourceInfo.ownerSignature || sourceInfo.signature;
   return metadata;
 }
 
@@ -369,11 +392,29 @@ function noteImageCollection(note, field, workingEntries) {
     var sourceInfo = noteImageSourceInfo(entry);
     if (sourceInfo && sourceInfo.kind === 'local') {
       var recordEntry = noteImageRecordEntry(entry, field, index, sourceInfo);
+      var preferredMarker = recordEntry.markerId || noteImageDefaultMarker(field, index);
+      var isNewBlobOwner = sourceInfo.representation === 'blob' && !sourceInfo.ownerSignature;
+      if (isNewBlobOwner) {
+        recordEntry._sourceSignature = noteImageBlobOwnerFingerprint(
+          field,
+          index,
+          preferredMarker,
+          sourceInfo.signature,
+        );
+      }
       recordEntry.markerId = noteImageAllocateMarker(
         workingEntries,
-        recordEntry.markerId || noteImageDefaultMarker(field, index),
-        sourceInfo.signature,
+        preferredMarker,
+        recordEntry._sourceSignature,
       );
+      if (isNewBlobOwner && recordEntry.markerId !== preferredMarker) {
+        recordEntry._sourceSignature = noteImageBlobOwnerFingerprint(
+          field,
+          index,
+          recordEntry.markerId,
+          sourceInfo.signature,
+        );
+      }
       workingEntries.push(recordEntry);
       output[index] = noteImageLocalMetadataEntry(entry);
       if (recordEntry.markerId) output[index].markerId = recordEntry.markerId;
@@ -535,7 +576,7 @@ function detachNoteImages(note, previousImageRecord) {
 }
 
 function noteImageHydratedEntry(entry, dataUrl) {
-  var copy = noteImageCopyMetadata(entry, { blob: true, field: true, index: true, markerId: true, sourceKey: true });
+  var copy = noteImageCopyMetadata(entry, { blob: true, field: true, index: true, sourceKey: true });
   if (!copy || typeof copy !== 'object') copy = {};
   var payload = dataUrl;
   if (isDataImageSource(dataUrl)) {
