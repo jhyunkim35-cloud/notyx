@@ -11,6 +11,13 @@ function updateGalleryConfirmCount() {
       : '✅ 선택 완료 — 노트에 삽입';
   }
 }
+
+function noteImageMarkerForGallery(image) {
+  if (image && /^note-image-\d+$/.test(image.markerId || '')) return image.markerId;
+  const index = Array.isArray(extractedImages) ? extractedImages.indexOf(image) : -1;
+  return `note-image-${index >= 0 ? index : (Number.isFinite(image?.slideNumber) ? image.slideNumber : 0)}`;
+}
+
 function renderImageGallery(images) {
   extractedImages = images;
   recommendedSlides = [];
@@ -171,6 +178,7 @@ function insertImagesInline(containerEl) {
     figure.dataset.slideInserted = String(slideNum);
     const imgEl = document.createElement('img');
     imgEl.src = getImgSrc(img);
+    imgEl.dataset.noteImageRef = noteImageMarkerForGallery(img);
     imgEl.className = 'inserted-slide-img';
     imgEl.alt = `슬라이드 ${slideNum}`;
     const caption = document.createElement('figcaption');
@@ -508,6 +516,7 @@ function insertImagesIntoNotes(images) {
 
     const imgEl = document.createElement('img');
     imgEl.src = getImgSrc(img);
+    imgEl.dataset.noteImageRef = noteImageMarkerForGallery(img);
     imgEl.alt = `슬라이드 ${img.slideNumber}`;
     imgEl.className = 'inserted-slide-img';
 

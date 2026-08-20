@@ -67,7 +67,8 @@ function computeAutoNoteTitle() {
 // saves (silent draft, then user-confirmed finalize) can't drift out of sync
 // when a field gets added to notes later.
 function buildNoteSaveFields({ title, folderId }) {
-  const notesHtml = document.getElementById('finalNotesBody')?.innerHTML || '';
+  const runtimeNotesHtml = document.getElementById('finalNotesBody')?.innerHTML || '';
+  const notesHtml = stripNoteImagePayloads({ notesHtml: runtimeNotesHtml }).notesHtml || '';
   // Phase 3B-4: pick up the most-recent recorder audio path so the note
   // doc knows which Storage object backs it. Cleared by the caller after a
   // successful save so the path doesn't leak into the next unrelated note.
@@ -87,6 +88,14 @@ function buildNoteSaveFields({ title, folderId }) {
   };
 }
 
+function showImageDegradationWarning(saveResult) {
+  if (!saveResult || saveResult.saveStatus !== 'image-degraded'
+      || saveResult.degradation?.resource !== 'noteImages'
+      || saveResult.degradation?.reason !== 'quota') return false;
+  showToast('⚠️ 이미지를 저장하지 못했습니다. 노트 내용은 저장되었습니다. 로그인하면 Firebase Storage로 이미지를 옮길 수 있습니다.');
+  return true;
+}
+
 // Q5: silent draft save — called right after the pipeline finishes, BEFORE
 // the name/folder modal shows. Writes the note under its auto-generated
 // title into 미분류 so a tab close/crash between "generation done" and "user
@@ -101,6 +110,7 @@ async function draftSaveNote() {
   try {
     const fields = buildNoteSaveFields({ title: computeAutoNoteTitle(), folderId: null });
     record = await saveNoteFS(Object.assign(fields, { sortOrder: await getNextSortOrder(null) }));
+    showImageDegradationWarning(record);
   } catch (e) {
     console.error('[draftSaveNote] failed:', e);
     return;
@@ -150,6 +160,7 @@ async function autoSaveNote() {
       id: currentNoteId || undefined,
       ...(isNewNote ? { sortOrder: await getNextSortOrder(chosenFolderId) } : {}),
     }));
+    showImageDegradationWarning(record);
     if (fields.audioStoragePath) window.recorderLastAudioPath = null;
     currentNoteId    = record.id;
     _draftSaveNoteId = null;
@@ -400,7 +411,8 @@ async function moveSavedNote(id) {
       const newSortOrder = await getNextSortOrder(folder.id, note.id);
       const updated = Object.assign({}, note, { folderId: folder.id, sortOrder: newSortOrder });
       try {
-        await saveNoteFS(updated);
+        const saveResult = await saveNoteFS(updated);
+        showImageDegradationWarning(saveResult);
         showSuccessToast(`📁 "${note.title || '노트'}" 이동 완료`);
       } catch (e) {
         console.warn('moveSavedNote save failed:', e);
@@ -652,7 +664,11 @@ async function importNotes(input) {
         console.warn('[importNotes] skipping ghost note:', note.id);
         continue;
       }
-      if (!existingNoteIds.has(note.id)) { await saveNoteFS(note); imported++; }
+      if (!existingNoteIds.has(note.id)) {
+        const saveResult = await saveNoteFS(note);
+        showImageDegradationWarning(saveResult);
+        imported++;
+      }
     }
     input.value = '';
     showSuccessToast(`⬆ ${imported}개 노트 가져오기 완료`);

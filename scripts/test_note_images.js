@@ -11,6 +11,10 @@ const markdownSource = fs.readFileSync(
   path.join(__dirname, '..', 'public', 'js', 'markdown.js'),
   'utf8',
 );
+const imageGallerySource = fs.readFileSync(
+  path.join(__dirname, '..', 'public', 'js', 'image_gallery.js'),
+  'utf8',
+);
 
 const context = {
   Blob,
@@ -23,6 +27,7 @@ const context = {
 };
 vm.runInNewContext(source, context, { filename: 'note_images.js' });
 vm.runInNewContext(markdownSource, context, { filename: 'markdown.js' });
+vm.runInNewContext(imageGallerySource, context, { filename: 'image_gallery.js' });
 
 const {
   isDataImageSource,
@@ -279,6 +284,19 @@ async function run() {
   assert.equal(isQuotaExceededError({ name: 'QuotaExceededError' }), true);
   assert.equal(isQuotaExceededError({ code: 22 }), true);
   assert.equal(isQuotaExceededError(new Error('unrelated failure')), false);
+
+  const galleryImage = { slideNumber: 4, imageBase64: PNG_BASE64, mimeType: 'image/png' };
+  context.extractedImages = [galleryImage];
+  assert.equal(
+    context.noteImageMarkerForGallery(galleryImage),
+    'note-image-0',
+    'gallery images receive deterministic marker metadata',
+  );
+
+  const galleryHtml = `<figure><img src="${PNG_DATA_URL}" data-note-image-ref="note-image-0"></figure>`;
+  const galleryFields = stripNoteImagePayloads({ notesHtml: galleryHtml });
+  assert.match(galleryFields.notesHtml, /data-note-image-ref="note-image-0"/);
+  assert.doesNotMatch(galleryFields.notesHtml, /data:image\//i);
 
   console.log('note images: 8 checks passed');
 }

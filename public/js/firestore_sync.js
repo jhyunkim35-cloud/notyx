@@ -46,7 +46,7 @@ async function saveNoteFS(note) {
   const record = Object.assign({ folderId: null, createdAt: now }, note, { id, updatedAt: now });
 
   // Always save full data to IndexedDB (local cache with base64 images)
-  await saveNote(record);
+  const localSaveResult = await saveNote(record);
 
   // If logged in, upload images to Storage and save to Firestore
   const ref = userNotesRef();
@@ -108,7 +108,7 @@ async function saveNoteFS(note) {
 
     await ref.doc(id).set(toSave, { merge: true });
   }
-  return record;
+  return Object.assign({}, record, localSaveResult);
 }
 // ─────────────────────────────────────────────────────────────────
 // Firestore is the truth source. IDB is an offline-only cache.
