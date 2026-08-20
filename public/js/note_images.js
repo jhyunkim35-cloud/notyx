@@ -221,6 +221,7 @@ function noteImagePayloadOmitMap() {
 }
 
 function noteImageLightweightEntry(entry, sourceInfo) {
+  if (!sourceInfo) return noteImageLocalMetadataEntry(entry);
   if (sourceInfo && sourceInfo.kind === 'remote') {
     var omit = noteImagePayloadOmitMap();
     delete omit[sourceInfo.sourceKey];
@@ -230,7 +231,7 @@ function noteImageLightweightEntry(entry, sourceInfo) {
     remote[sourceInfo.sourceKey] = sourceInfo.value;
     return remote;
   }
-  return null;
+  return noteImageLocalMetadataEntry(entry);
 }
 
 function noteImageLocalMetadataEntry(entry) {
@@ -281,15 +282,18 @@ function noteImageReplaceHtmlSources(html, workingEntries) {
     var sourceMatch = /\bsrc\s*=\s*(?:(["'])([\s\S]*?)\1|([^\s>]+))/i.exec(attrs);
     if (!sourceMatch) return whole;
     var value = sourceMatch[2] !== undefined ? sourceMatch[2] : sourceMatch[3];
-    if (!isDataImageSource(value)) return whole;
-    var sourceInfo = noteImageSourceInfo({ imageBase64: value, mimeType: noteImageParseDataUrl(value).mimeType });
-    var existing = workingEntries.find(function (entry) {
-      return entry._sourceSignature === sourceInfo.signature;
-    });
-    if (!existing) {
-      existing = noteImageRecordEntry({}, 'html', htmlIndex, sourceInfo);
-      workingEntries.push(existing);
+    var mimeMatch = /\b(?:data-mime-type|data-mime|mime-type|type)\s*=\s*(?:(["'])([^"']+)\1|([^\s>]+))/i.exec(attrs);
+    var mimeType = mimeMatch ? (mimeMatch[2] !== undefined ? mimeMatch[2] : mimeMatch[3]) : '';
+    var sourceInfo;
+    if (isDataImageSource(value)) {
+      sourceInfo = noteImageSourceInfo({ imageBase64: value, mimeType: noteImageParseDataUrl(value).mimeType });
+    } else if (noteImageLooksLikeRawBase64(value, mimeType)) {
+      sourceInfo = noteImageSourceInfo({ imageBase64: value, mimeType: mimeType });
+    } else {
+      return whole;
     }
+    var existing = noteImageRecordEntry({}, 'html', htmlIndex, sourceInfo);
+    workingEntries.push(existing);
     htmlIndex += 1;
     var token = '__NOTE_IMAGE_REF_' + workingEntries.indexOf(existing) + '__';
     var cleanAttrs = attrs.replace(/\sdata-note-image-ref\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i, '');
@@ -298,8 +302,20 @@ function noteImageReplaceHtmlSources(html, workingEntries) {
   });
 }
 
+function noteImageKeepReferencedHtmlEntries(html, entries) {
+  var referenced = {};
+  String(html).replace(/\bdata-note-image-ref\s*=\s*(?:(["'])([^"']+)\1|([^\s>]+))/gi, function (whole, quote, quoted, bare) {
+    referenced[quoted !== undefined ? quoted : bare] = true;
+    return whole;
+  });
+  return entries.filter(function (entry) {
+    return entry.field !== 'html' || referenced[entry.markerId];
+  });
+}
+
 function noteImageFinaliseRecord(entries, noteId) {
   entries.forEach(function (entry, index) {
+    entry._previousMarkerId = entry.markerId;
     entry.markerId = 'note-image-' + index;
   });
   return {
@@ -307,6 +323,7 @@ function noteImageFinaliseRecord(entries, noteId) {
     images: entries.map(function (entry) {
       var copy = noteImageClone(entry);
       delete copy._sourceSignature;
+      delete copy._previousMarkerId;
       return copy;
     }),
   };
@@ -316,6 +333,12 @@ function noteImageReplaceTokens(html, entries) {
   var result = String(html);
   entries.forEach(function (entry, index) {
     result = result.split('__NOTE_IMAGE_REF_' + index + '__').join(entry.markerId);
+    if (entry._previousMarkerId && entry._previousMarkerId !== entry.markerId) {
+      result = result.replace(
+        new RegExp("(data-note-image-ref\\s*=\\s*[\\\"'])" + entry._previousMarkerId + "([\\\"'])", 'g'),
+        '$1' + entry.markerId + '$2',
+      );
+    }
   });
   return result;
 }
@@ -344,6 +367,7 @@ function detachNoteImages(note, previousImageRecord) {
     if (intent === 'delete') lightweight[field] = [];
   });
   if (htmlIntent === 'replace') {
+    workingEntries = noteImageKeepReferencedHtmlEntries(input.notesHtml, workingEntries);
     lightweight.notesHtml = noteImageReplaceHtmlSources(input.notesHtml, workingEntries);
   } else if (htmlIntent === 'delete') {
     lightweight.notesHtml = '';
@@ -351,14 +375,19 @@ function detachNoteImages(note, previousImageRecord) {
   }
   var noteId = input.id !== undefined ? input.id : input.noteId;
   var imageRecord = noteImageFinaliseRecord(workingEntries, noteId);
-  if (htmlIntent === 'replace') lightweight.notesHtml = noteImageReplaceTokens(lightweight.notesHtml, imageRecord.images);
+  if (htmlIntent === 'replace') lightweight.notesHtml = noteImageReplaceTokens(lightweight.notesHtml, workingEntries);
   return { note: lightweight, imageRecord: imageRecord, imageIntent: imageIntent };
 }
 
 function noteImageHydratedEntry(entry, dataUrl) {
   var copy = noteImageCopyMetadata(entry, { blob: true, field: true, index: true, markerId: true, sourceKey: true });
   if (!copy || typeof copy !== 'object') copy = {};
-  copy.imageBase64 = dataUrl;
+  var payload = dataUrl;
+  if (isDataImageSource(dataUrl)) {
+    var parsed = noteImageParseDataUrl(dataUrl);
+    if (parsed.isBase64) payload = noteImageNormaliseBase64(parsed.encoded);
+  }
+  copy.imageBase64 = payload;
   if (entry.sourceKey && entry.sourceKey !== 'imageBase64') copy[entry.sourceKey] = dataUrl;
   return copy;
 }

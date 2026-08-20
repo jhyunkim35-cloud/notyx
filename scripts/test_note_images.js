@@ -7,6 +7,10 @@ const source = fs.readFileSync(
   path.join(__dirname, '..', 'public', 'js', 'note_images.js'),
   'utf8',
 );
+const markdownSource = fs.readFileSync(
+  path.join(__dirname, '..', 'public', 'js', 'markdown.js'),
+  'utf8',
+);
 
 const context = {
   Blob,
@@ -18,6 +22,7 @@ const context = {
   clearTimeout,
 };
 vm.runInNewContext(source, context, { filename: 'note_images.js' });
+vm.runInNewContext(markdownSource, context, { filename: 'markdown.js' });
 
 const {
   isDataImageSource,
@@ -35,20 +40,51 @@ const PNG_BASE64 = 'iVBORw0KGgo=';
 const JPEG_DATA_URL = 'data:image/jpeg;base64,/9j/';
 const REMOTE_URL = 'https://cdn.example.test/slide-2.png';
 
+const PAYLOAD_ALIASES = new Set(['imageBase64', 'src', 'data', 'blob', 'payload', 'base64', 'imageData']);
+
+function assertNoPersistedPayload(value, key, pathName) {
+  if (value instanceof Blob) assert.fail(`${pathName} contains a Blob`);
+  if (typeof value === 'string') {
+    assert.equal(/^data:image\//i.test(value), false, `${pathName} contains a data URL`);
+    if (PAYLOAD_ALIASES.has(key)) {
+      assert.equal(/^[A-Za-z0-9+/]+={0,2}$/.test(value.replace(/[\r\n\t ]/g, '')) && value.length >= 8, false,
+        `${pathName} contains raw base64`);
+    }
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) {
+      if (i in value) assertNoPersistedPayload(value[i], key, `${pathName}[${i}]`);
+    }
+    return;
+  }
+  for (const [childKey, childValue] of Object.entries(value)) {
+    assertNoPersistedPayload(childValue, childKey, `${pathName}.${childKey}`);
+  }
+}
+
 function assertNoImagePayloads(note) {
   for (const field of ['extractedImages', 'slideImages']) {
-    for (const image of note[field] || []) {
-      if (!image) continue;
-      assert.notEqual(typeof image.imageBase64 === 'string' && image.imageBase64.startsWith('data:'), true,
-        `${field} contains a data URL`);
-      assert.notEqual(typeof image.src === 'string' && image.src.startsWith('data:'), true,
-        `${field} contains a data URL in src`);
-      assert.notEqual(typeof image.data === 'string' && image.data.startsWith('data:'), true,
-        `${field} contains a data URL in data`);
-      assert.equal(image.blob instanceof Blob, false, `${field} contains a Blob`);
-    }
+    assertNoPersistedPayload(note[field] || [], field, field);
   }
   assert.equal(/data:image\//i.test(note.notesHtml || ''), false, 'notesHtml contains a data URL');
+  assert.doesNotMatch(note.notesHtml || '', /<img\b[^>]*\bsrc\s*=\s*["'][A-Za-z0-9+/]{8,}={0,2}["']/i,
+    'notesHtml contains raw base64 in img src');
+}
+
+function deepFreeze(value, seen = new Set()) {
+  if (!value || typeof value !== 'object' || value instanceof Blob || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) deepFreeze(child, seen);
+  return Object.freeze(value);
+}
+
+function snapshot(value) {
+  return JSON.stringify(value, (key, child) => {
+    if (child instanceof Blob) return `[Blob:${child.type}:${child.size}]`;
+    return child;
+  });
 }
 
 async function run() {
@@ -72,37 +108,43 @@ async function run() {
     folderId: 'folder-7',
     customMetadata: { keep: true },
     extractedImages: [
-      { slideNumber: 4, imageBase64: PNG_BASE64, mimeType: 'image/png', fileName: 'four.png', alt: '첫 이미지' },
-      null,
+      { slideNumber: 4, imageBase64: PNG_BASE64, mimeType: 'image/png', fileName: 'four.png', alt: '첫 이미지', nested: { blob: new Blob(['nested'], { type: 'image/png' }), data: PNG_DATA_URL } },
+      ,
       { slideNumber: 9, imageBase64: REMOTE_URL, mimeType: 'url', fileName: 'nine.png', alt: '원격 이미지' },
     ],
     slideImages: [
       { slideNumber: 4, imageBase64: PNG_BASE64, mimeType: 'image/png', fileName: 'four.png' },
-      null,
+      ,
       { slideNumber: 9, imageBase64: REMOTE_URL, mimeType: 'url', fileName: 'nine.png' },
     ],
     slideImageUrls: [null, REMOTE_URL, null],
     notesHtml: `<p>본문</p><img class="slide" src="${PNG_DATA_URL}" alt="첫 이미지"><img src="${REMOTE_URL}">`,
   };
 
+  const sourceSnapshot = snapshot(sourceNote);
+  deepFreeze(sourceNote);
   const detached = detachNoteImages(sourceNote);
   assert.notStrictEqual(detached.note, sourceNote);
-  assert.deepEqual(sourceNote.extractedImages[0].imageBase64, PNG_BASE64, 'detach does not mutate input');
+  assert.equal(sourceNote.extractedImages[0].imageBase64, PNG_BASE64, 'detach does not mutate input');
+  assert.equal(snapshot(sourceNote), sourceSnapshot, 'detach does not mutate frozen input');
   assert.equal(detached.note.customMetadata.keep, true);
   assert.equal(detached.note.extractedImages[0].slideNumber, 4);
   assert.equal(detached.note.extractedImages[0].mimeType, 'image/png');
   assert.equal(detached.note.extractedImages[0].fileName, 'four.png');
   assert.equal(detached.note.extractedImages[0].imageBase64, undefined);
-  assert.deepEqual(detached.note.extractedImages[1], null, 'sparse slot remains in extractedImages');
+  assert.equal(1 in detached.note.extractedImages, false, 'real sparse hole remains in extractedImages');
   assert.equal(detached.note.extractedImages[2].imageBase64, REMOTE_URL, 'URL entry remains in place');
   assert.equal(JSON.stringify(detached.note.slideImageUrls), JSON.stringify([null, REMOTE_URL, null]), 'slideImageUrls remains aligned');
-  assert.equal(detached.imageRecord.images.length, 2, 'local image record keeps one entry per source image');
-  assert.equal(JSON.stringify(detached.imageRecord.images.map(image => image.slideNumber)), JSON.stringify([4, 4]));
-  assert.equal(JSON.stringify(detached.imageRecord.images.map(image => image.fileName)), JSON.stringify(['four.png', 'four.png']));
-  assert.equal(JSON.stringify(detached.imageRecord.images.map(image => image.mimeType)), JSON.stringify(['image/png', 'image/png']));
-  assert.equal(JSON.stringify(detached.imageRecord.images.map(image => image.index)), JSON.stringify([0, 0]));
+  const arrayOwners = detached.imageRecord.images.filter(image => image.field !== 'html');
+  assert.equal(arrayOwners.length, 2, 'array owners keep one entry per local array source');
+  assert.equal(detached.imageRecord.images.filter(image => image.field === 'html').length, 1,
+    'HTML keeps an independent local owner');
+  assert.equal(JSON.stringify(arrayOwners.map(image => image.slideNumber)), JSON.stringify([4, 4]));
+  assert.equal(JSON.stringify(arrayOwners.map(image => image.fileName)), JSON.stringify(['four.png', 'four.png']));
+  assert.equal(JSON.stringify(arrayOwners.map(image => image.mimeType)), JSON.stringify(['image/png', 'image/png']));
+  assert.equal(JSON.stringify(arrayOwners.map(image => image.index)), JSON.stringify([0, 0]));
   assert.equal(detached.imageRecord.images.every(image => image.blob instanceof Blob), true);
-  assert.match(detached.note.notesHtml, /data-note-image-ref="note-image-0"/);
+  assert.match(detached.note.notesHtml, /data-note-image-ref="note-image-2"/);
   assert.doesNotMatch(detached.note.notesHtml, /data:image\//i);
   assertNoImagePayloads(detached.note);
 
@@ -114,13 +156,71 @@ async function run() {
   );
 
   const hydrated = await hydrateNoteImages(detached.note, detached.imageRecord);
-  assert.equal(hydrated.extractedImages[0].imageBase64, 'data:image/png;base64,iVBORw0KGgo=');
-  assert.equal(hydrated.extractedImages[1], null, 'hydration preserves sparse slots');
+  assert.equal(hydrated.extractedImages[0].imageBase64, 'iVBORw0KGgo=', 'hydration restores raw viewer payload');
+  assert.equal(1 in hydrated.extractedImages, false, 'hydration preserves sparse slots');
   assert.equal(hydrated.extractedImages[2].imageBase64, REMOTE_URL, 'hydration preserves remote URL');
-  assert.equal(hydrated.slideImages[0].imageBase64, 'data:image/png;base64,iVBORw0KGgo=');
+  assert.equal(hydrated.slideImages[0].imageBase64, 'iVBORw0KGgo=');
+  assert.equal(context.getImgSrc(hydrated.extractedImages[0]), 'data:image/png;base64,iVBORw0KGgo=',
+    'existing getImgSrc boundary produces exactly one data URL prefix');
   assert.match(hydrated.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/);
-  assert.match(hydrated.notesHtml, /data-note-image-ref="note-image-0"/);
+  assert.match(hydrated.notesHtml, /data-note-image-ref="note-image-2"/);
   assert.equal(detached.note.notesHtml.includes('data:image/'), false, 'hydration does not mutate lightweight note');
+
+  const sharedOwner = detachNoteImages({
+    id: 'shared-owner',
+    extractedImages: [{ slideNumber: 1, imageBase64: PNG_BASE64, mimeType: 'image/png', fileName: 'shared.png' }],
+    notesHtml: `<img src="${PNG_DATA_URL}">`,
+  });
+  const deletedArrayOwner = detachNoteImages({
+    id: 'shared-owner',
+    notesHtml: sharedOwner.note.notesHtml,
+    extractedImages: [],
+  }, sharedOwner.imageRecord);
+  const hydratedPreservedHtml = await hydrateNoteImages(
+    deletedArrayOwner.note,
+    deletedArrayOwner.imageRecord,
+  );
+  assert.match(hydratedPreservedHtml.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/,
+    'omitted HTML must retain its own local image owner');
+
+  const oldHtml = detachNoteImages({
+    id: 'html-replacement',
+    notesHtml: `<p>old</p><img src="${PNG_DATA_URL}">`,
+  });
+  const newHtml = detachNoteImages({
+    id: 'html-replacement',
+    notesHtml: '<p>new without an image</p>',
+  }, oldHtml.imageRecord);
+  assert.equal(newHtml.imageRecord.images.some(image => image.field === 'html'), false,
+    'replacing HTML must remove stale HTML-owned Blobs');
+
+  const metadataOnly = detachNoteImages({
+    id: 'metadata-only-entry',
+    extractedImages: [
+      ,
+      { slideNumber: 6, fileName: 'metadata-only.png', mimeType: 'image/png', custom: { keep: 'yes' } },
+    ],
+  });
+  assert.equal(1 in metadataOnly.note.extractedImages, true, 'source-less entry keeps its sparse slot');
+  assert.equal(metadataOnly.note.extractedImages[1].slideNumber, 6);
+  assert.equal(metadataOnly.note.extractedImages[1].fileName, 'metadata-only.png');
+  assert.equal(metadataOnly.note.extractedImages[1].custom.keep, 'yes');
+
+  const rawHtml = detachNoteImages({
+    id: 'raw-html',
+    notesHtml: '<img src="iVBORw0KGgo=" type="image/png">'
+      + '<img src="/assets/slide.png">'
+      + `<img src="${REMOTE_URL}">`,
+  });
+  assert.doesNotMatch(rawHtml.note.notesHtml, /src="iVBORw0KGgo="/,
+    'raw base64 must not remain in persisted HTML src');
+  assert.match(rawHtml.note.notesHtml, /data-note-image-ref="note-image-0"/);
+  assert.match(rawHtml.note.notesHtml, /src="\/assets\/slide\.png"/,
+    'relative URL must remain unchanged');
+  assert.match(rawHtml.note.notesHtml, new RegExp(`src="${REMOTE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`),
+    'remote URL must remain unchanged');
+  assert.equal(rawHtml.imageRecord.images.length, 1);
+  assert.equal(rawHtml.imageRecord.images[0].mimeType, 'image/png');
 
   const omitted = detachNoteImages({ id: 'note-1', title: 'metadata only' }, detached.imageRecord);
   assert.equal(omitted.imageIntent.overall, 'preserve');
@@ -131,7 +231,8 @@ async function run() {
   assert.equal(deleted.imageIntent.overall, 'delete');
   assert.equal(deleted.imageIntent.extractedImages, 'delete');
   assert.equal(deleted.imageIntent.slideImages, 'delete');
-  assert.equal(deleted.imageRecord.images.length, 0);
+  assert.equal(deleted.imageRecord.images.filter(image => image.field === 'html').length, 1,
+    'omitted HTML ownership survives array deletion');
 
   const replacement = detachNoteImages({
     id: 'note-1',
