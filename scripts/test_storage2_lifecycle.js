@@ -290,10 +290,25 @@ async function run() {
   }] }), /conflicting image sources/,
   'remote aliases with different paths must reject');
   assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-conflicting-remote-query', title: 'Conflicting remote query', notesText: 'Must reject',
+    extractedImages: [{ imageBase64: 'https://cdn.example.test/a.png?token=ABC', src: 'https://cdn.example.test/a.png?token=abc' }],
+  }] }), /conflicting image sources/,
+  'remote aliases with query case differences must reject');
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-conflicting-remote-fragment', title: 'Conflicting remote fragment', notesText: 'Must reject',
+    extractedImages: [{ imageBase64: 'https://cdn.example.test/a.png#SlideA', src: 'https://cdn.example.test/a.png#slidea' }],
+  }] }), /conflicting image sources/,
+  'remote aliases with fragment case differences must reject');
+  assert.throws(() => context._buildImportPlan({ notes: [{
     id: 'legacy-conflicting-remote-credentials', title: 'Conflicting remote credentials', notesText: 'Must reject',
     extractedImages: [{ imageBase64: 'https://User:Pass@cdn.example.test/a.png', src: 'https://user:Pass@cdn.example.test/a.png' }],
   }] }), /conflicting image sources/,
   'remote aliases with credential case differences must reject');
+  assert.throws(() => context._buildImportPlan({ notes: [{
+    id: 'legacy-malformed-direct-url', title: 'Malformed direct URL', notesText: 'Must reject',
+    extractedImages: ['https://[::1'],
+  }] }), /valid remote image URL/,
+  'malformed direct legacy URLs must fail canonical validation');
 
   const sameBlob = new context.Blob(['same bytes'], { type: 'image/png' });
   const sameBlobPlan = context._buildImportPlan({ notes: [{
@@ -411,6 +426,13 @@ async function run() {
       extractedImages: [{ imageBase64: 'https://User:Pass@cdn.example.test/a.png', src: 'https://user:Pass@cdn.example.test/a.png' }],
     }],
   }, 'legacy import conflicting remote credentials');
+  await assertRejectedImport({
+    folders: [{ id: 'malformed-url-folder', name: 'Must not write' }],
+    notes: [{
+      id: 'legacy-import-malformed-direct-url', title: 'Malformed direct URL', notesText: 'Must reject',
+      extractedImages: ['http://'],
+    }],
+  }, 'legacy import malformed direct URL');
 
   const remoteMarkerNote = {
     id: 'remote-marker-collision', title: 'Remote marker', notesText: 'Remote source',

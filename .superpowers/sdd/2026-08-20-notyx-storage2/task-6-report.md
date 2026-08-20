@@ -266,10 +266,33 @@ Verification commands and exact results:
 
 ### Commit
 
-Implementation commit SHA: pending.
+Implementation commit SHA: `24217dd49f15b4fe45d7b417980a34f9d434329d`.
 
 ### Concerns
 
 - Live verification was intentionally omitted; `verify.sh` was run without `--live`.
 - No billing files were changed.
 - Protected unrelated paths, plans/spec documents, and `public/img/` remain outside the task scope.
+
+## Controller hotfix after fix-round cap
+
+### RED
+
+The final scoped audit reproduced one remaining fail-closed gap: a direct legacy string such as `https://[::1` passed the prefix-level source check without reaching WHATWG URL validation, so import could write folders and a note before rejecting nothing.
+
+### GREEN
+
+The controller changed only the direct-string branch of `_validateLegacyCanonicalEntry()` to call the same canonical source validator already used by object aliases. Added tests cover malformed direct URLs, zero writes with a folder present, and query/fragment case distinctions. Cache version is `storage2task6r7`.
+
+Verification results:
+
+- `node --check public/js/notes_crud.js` — exit 0.
+- `node scripts/test_storage2_lifecycle.js` — `STORAGE2 lifecycle: PASS`.
+- `node scripts/test_note_images.js` — `note images: 8 checks passed`.
+- `node scripts/test_storage2_task4_ui.js` — `STORAGE2 Task 4 UI: GREEN contract checks passed`.
+- `node scripts/test_storage2_sync.js` — `STORAGE2 sync: PASS (Task 5 payload-safe Firestore and sync contracts)`.
+- `node scripts/test_storage2_browser.mjs` — `STORAGE2 Chromium IndexedDB: PASS (v5 fixture, v6 cursor migration, reopen convergence, abort safety)`.
+- `scripts/verify.sh` — `ALL GREEN`; 59 JavaScript files checked and one cache version found.
+- `git diff --check` — exit 0.
+
+Live verification remains intentionally deferred to the deployment gate. No billing or protected unrelated files were changed.

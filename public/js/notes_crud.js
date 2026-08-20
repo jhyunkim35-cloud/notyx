@@ -968,7 +968,11 @@ function _validateLegacyNestedMetadata(value, label, seen = new Set()) {
 }
 
 function _validateLegacyCanonicalEntry(entry, label) {
-  if (typeof entry === 'string' || noteImageIsBlob(entry)) {
+  if (typeof entry === 'string') {
+    _legacyCanonicalSource(entry, '', label);
+    return;
+  }
+  if (noteImageIsBlob(entry)) {
     _validateLegacyDirectSource(entry, '', label);
     return;
   }
