@@ -237,6 +237,9 @@ function _enqueueNoteRemoteCompletion(noteId, generation, task) {
       return { stale: true, note: await _readAfterLatestLocalWrite(noteId) };
     }
     await task();
+    if (!_isCurrentNoteSyncGeneration(noteId, generation)) {
+      return { stale: true, note: await _readAfterLatestLocalWrite(noteId) };
+    }
     return { stale: false };
   });
   _noteRemoteCompletionQueues.set(noteId, completion);

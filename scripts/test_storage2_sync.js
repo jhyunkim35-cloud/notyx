@@ -435,6 +435,63 @@ async function run() {
   assert.equal(staleLocalQueueResultResolved.notesText, 'New text',
     'stale save result reflects the final newer local state');
 
+  let releaseOldRemoteSet;
+  let oldRemoteSetStarted;
+  const remoteSetGate = new Promise(resolve => { releaseOldRemoteSet = resolve; });
+  oldRemoteSetStarted = new Promise(resolve => { context.__oldRemoteSetStarted = resolve; });
+  const remoteRaceWrites = [];
+  const remoteRaceFirestore = makeFirestore(context, remoteRaceWrites);
+  const originalRemoteDoc = remoteRaceFirestore.noteRef.doc.bind(remoteRaceFirestore.noteRef);
+  let remoteSetNumber = 0;
+  remoteRaceFirestore.noteRef.doc = id => {
+    const doc = originalRemoteDoc(id);
+    const originalSet = doc.set.bind(doc);
+    doc.set = async payload => {
+      remoteSetNumber += 1;
+      if (remoteSetNumber === 1) {
+        context.__oldRemoteSetStarted();
+        await remoteSetGate;
+      }
+      return originalSet(payload);
+    };
+    return doc;
+  };
+  let remoteRaceSaveNumber = 0;
+  let remoteRaceCurrent = null;
+  context.saveNote = async note => {
+    const saveNumber = ++remoteRaceSaveNumber;
+    remoteRaceCurrent = Object.assign({}, note, { updatedAt: `remote-race-save-${saveNumber}` });
+    localSaves.push(remoteRaceCurrent);
+    return remoteRaceCurrent;
+  };
+  context.getNote = async () => (remoteRaceCurrent ? Object.assign({}, remoteRaceCurrent) : null);
+  const staleRemoteResult = context.saveNoteFS({
+    id: 'remote-queue-note',
+    title: 'Old title',
+    notesText: 'Old text',
+    customMetadata: { owner: 'old' },
+  });
+  await oldRemoteSetStarted;
+  const newerRemoteResultPromise = context.saveNoteFS({
+    id: 'remote-queue-note',
+    title: 'New title',
+    notesText: 'New text',
+    customMetadata: { owner: 'new', retained: true },
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(remoteRaceCurrent.notesText, 'New text', 'newer local state advances while the remote set is gated');
+  releaseOldRemoteSet();
+  const newerRemoteResult = await newerRemoteResultPromise;
+  const staleRemoteResultResolved = await staleRemoteResult;
+  const remoteQueueNote = await remoteRaceFirestore.noteRef.doc('remote-queue-note').get();
+  assert.equal(remoteRaceCurrent.notesText, 'New text');
+  assert.equal(remoteQueueNote.data().notesText, 'New text', 'newer remote write remains final');
+  assert.equal(remoteSetNumber, 2, 'both ordered remote generations may complete');
+  assert.equal(remoteRaceWrites.length, 2);
+  assert.equal(newerRemoteResult.notesText, 'New text', 'newer remote save result remains newer');
+  assert.equal(staleRemoteResultResolved.notesText, 'New text',
+    'in-flight stale remote save result reflects the newer state');
+
   const failedUploads = [];
   context.storage = makeStorage(failedUploads, true);
   localSaves.length = 0;
