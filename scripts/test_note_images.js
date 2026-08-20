@@ -183,6 +183,20 @@ async function run() {
   assert.match(hydratedPreservedHtml.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/,
     'omitted HTML must retain its own local image owner');
 
+  const omittedArrayUpdate = detachNoteImages({
+    id: 'shared-owner',
+    extractedImages: [],
+  }, sharedOwner.imageRecord);
+  assert.equal(Object.prototype.hasOwnProperty.call(omittedArrayUpdate.note, 'notesHtml'), false,
+    'partial array update truly omits notesHtml');
+  const storageMergedNote = { ...sharedOwner.note, ...omittedArrayUpdate.note };
+  const hydratedAfterStorageMerge = await hydrateNoteImages(
+    storageMergedNote,
+    omittedArrayUpdate.imageRecord,
+  );
+  assert.match(hydratedAfterStorageMerge.notesHtml, /src="data:image\/png;base64,iVBORw0KGgo="/,
+    'omitted notesHtml keeps the persisted marker valid after storage-style merge');
+
   const oldHtml = detachNoteImages({
     id: 'html-replacement',
     notesHtml: `<p>old</p><img src="${PNG_DATA_URL}">`,
@@ -221,6 +235,18 @@ async function run() {
     'remote URL must remain unchanged');
   assert.equal(rawHtml.imageRecord.images.length, 1);
   assert.equal(rawHtml.imageRecord.images[0].mimeType, 'image/png');
+
+  const rawHtmlWithoutMime = detachNoteImages({
+    id: 'raw-html-without-mime',
+    notesHtml: '<img src="iVBORw0KGgo=">'
+      + '<img src="/assets/slide.png">'
+      + `<img src="${REMOTE_URL}">`,
+  });
+  assert.doesNotMatch(rawHtmlWithoutMime.note.notesHtml, /src="iVBORw0KGgo="/,
+    'raw PNG base64 without MIME context must not remain in persisted HTML');
+  assert.match(rawHtmlWithoutMime.note.notesHtml, /data-note-image-ref="note-image-0"/);
+  assert.match(rawHtmlWithoutMime.note.notesHtml, /src="\/assets\/slide\.png"/);
+  assert.equal(rawHtmlWithoutMime.imageRecord.images[0].mimeType, 'image/png');
 
   const omitted = detachNoteImages({ id: 'note-1', title: 'metadata only' }, detached.imageRecord);
   assert.equal(omitted.imageIntent.overall, 'preserve');

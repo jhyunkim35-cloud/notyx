@@ -44,6 +44,33 @@ function noteImageLooksLikeRawBase64(value, mimeType) {
   return compact.length > 0 && compact.length % 4 !== 1 && /^[A-Za-z0-9+/]+={0,2}$/.test(compact);
 }
 
+function noteImageInferMimeFromRawBase64(value) {
+  var compact = noteImageNormaliseBase64(value);
+  if (!noteImageLooksLikeRawBase64(compact, 'image/unknown')) return '';
+  try {
+    var binary = atob(compact);
+    if (binary.length >= 8
+      && binary.charCodeAt(0) === 0x89
+      && binary.charCodeAt(1) === 0x50
+      && binary.charCodeAt(2) === 0x4e
+      && binary.charCodeAt(3) === 0x47
+      && binary.charCodeAt(4) === 0x0d
+      && binary.charCodeAt(5) === 0x0a
+      && binary.charCodeAt(6) === 0x1a
+      && binary.charCodeAt(7) === 0x0a) return 'image/png';
+    if (binary.length >= 3
+      && binary.charCodeAt(0) === 0xff
+      && binary.charCodeAt(1) === 0xd8
+      && binary.charCodeAt(2) === 0xff) return 'image/jpeg';
+    if (binary.length >= 6 && binary.slice(0, 6) === 'GIF87a') return 'image/gif';
+    if (binary.length >= 6 && binary.slice(0, 6) === 'GIF89a') return 'image/gif';
+    if (binary.length >= 12 && binary.slice(0, 4) === 'RIFF' && binary.slice(8, 12) === 'WEBP') return 'image/webp';
+  } catch (error) {
+    return '';
+  }
+  return '';
+}
+
 function dataUrlToBlob(dataUrl) {
   var parsed = noteImageParseDataUrl(dataUrl);
   var bytes;
@@ -287,10 +314,10 @@ function noteImageReplaceHtmlSources(html, workingEntries) {
     var sourceInfo;
     if (isDataImageSource(value)) {
       sourceInfo = noteImageSourceInfo({ imageBase64: value, mimeType: noteImageParseDataUrl(value).mimeType });
-    } else if (noteImageLooksLikeRawBase64(value, mimeType)) {
-      sourceInfo = noteImageSourceInfo({ imageBase64: value, mimeType: mimeType });
     } else {
-      return whole;
+      var inferredMimeType = mimeType || noteImageInferMimeFromRawBase64(value);
+      if (!noteImageLooksLikeRawBase64(value, inferredMimeType)) return whole;
+      sourceInfo = noteImageSourceInfo({ imageBase64: value, mimeType: inferredMimeType });
     }
     var existing = noteImageRecordEntry({}, 'html', htmlIndex, sourceInfo);
     workingEntries.push(existing);
@@ -314,16 +341,30 @@ function noteImageKeepReferencedHtmlEntries(html, entries) {
 }
 
 function noteImageFinaliseRecord(entries, noteId) {
-  entries.forEach(function (entry, index) {
-    entry._previousMarkerId = entry.markerId;
-    entry.markerId = 'note-image-' + index;
+  var usedMarkers = {};
+  entries.forEach(function (entry) {
+    if (typeof entry.markerId === 'string' && /^note-image-\d+$/.test(entry.markerId) && !usedMarkers[entry.markerId]) {
+      usedMarkers[entry.markerId] = true;
+    } else {
+      delete entry.markerId;
+    }
+  });
+  var nextMarker = 0;
+  entries.forEach(function (entry) {
+    if (entry.markerId) return;
+    var markerId;
+    do {
+      markerId = 'note-image-' + nextMarker;
+      nextMarker += 1;
+    } while (usedMarkers[markerId]);
+    entry.markerId = markerId;
+    usedMarkers[markerId] = true;
   });
   return {
     noteId: noteId,
     images: entries.map(function (entry) {
       var copy = noteImageClone(entry);
       delete copy._sourceSignature;
-      delete copy._previousMarkerId;
       return copy;
     }),
   };
@@ -333,12 +374,6 @@ function noteImageReplaceTokens(html, entries) {
   var result = String(html);
   entries.forEach(function (entry, index) {
     result = result.split('__NOTE_IMAGE_REF_' + index + '__').join(entry.markerId);
-    if (entry._previousMarkerId && entry._previousMarkerId !== entry.markerId) {
-      result = result.replace(
-        new RegExp("(data-note-image-ref\\s*=\\s*[\\\"'])" + entry._previousMarkerId + "([\\\"'])", 'g'),
-        '$1' + entry.markerId + '$2',
-      );
-    }
   });
   return result;
 }
