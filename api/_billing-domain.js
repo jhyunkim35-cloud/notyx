@@ -32,7 +32,8 @@ function requireDate(value, name) {
 }
 
 function requirePlainObject(value, name) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+  const prototype = value === null || typeof value !== 'object' ? undefined : Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError(`${name} must be an object`);
   }
   return value;
@@ -108,17 +109,21 @@ function addAnchoredMonth(date, anchorDay, timeZone) {
   requireInteger(anchorDay, 'anchorDay', 1, 31);
   if (typeof timeZone !== 'string') throw new TypeError('timeZone must be a string');
   if (timeZone !== BILLING_TIME_ZONE) throw new RangeError('unsupported time zone');
-  return fromLocalParts(monthPartsFromAnchor(date, anchorDay, 1));
+  const result = fromLocalParts(monthPartsFromAnchor(date, anchorDay, 1));
+  if (Number.isNaN(result.getTime())) throw new RangeError('generated date is out of range');
+  return result;
 }
 
 function periodFromAnchor(anchor, cycle) {
   requireDate(anchor, 'anchor');
   requireInteger(cycle, 'cycle', 0);
   const anchorDay = localParts(anchor).day;
-  return {
-    start: fromLocalParts(monthPartsFromAnchor(anchor, anchorDay, cycle)),
-    end: fromLocalParts(monthPartsFromAnchor(anchor, anchorDay, cycle + 1)),
-  };
+  const start = fromLocalParts(monthPartsFromAnchor(anchor, anchorDay, cycle));
+  const end = fromLocalParts(monthPartsFromAnchor(anchor, anchorDay, cycle + 1));
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) {
+    throw new RangeError('generated period is out of range');
+  }
+  return { start, end };
 }
 
 function addSeoulDays(date, days) {
@@ -405,8 +410,8 @@ function nextRenewalState(subscription, outcome, now) {
   }
   if (checkedOutcome.type === 'resume_requested') {
     if (checkedSubscription.status !== 'active') throw new RangeError('resume requires active state');
-    if (!checkedSubscription.cancelAtPeriodEnd) return {};
     if (checkedNow.getTime() >= periodEnd.getTime()) throw new RangeError('cannot resume at or after period end');
+    if (!checkedSubscription.cancelAtPeriodEnd) return {};
     return { cancelAtPeriodEnd: false, canceledAt: null, updatedAt: isoNow };
   }
   if (checkedOutcome.type === 'period_expired') {
@@ -430,7 +435,8 @@ function hasProEntitlement(subscription, now) {
       return checkedNow.getTime() >= start && checkedNow.getTime() < end;
     }
     if (checked.status === 'past_due') {
-      return checked.retryCount === 1 || checked.retryCount === 2;
+      const periodEnd = new Date(checked.currentPeriodEnd).getTime();
+      return (checked.retryCount === 1 || checked.retryCount === 2) && checkedNow.getTime() >= periodEnd;
     }
   } catch (error) {
     return false;

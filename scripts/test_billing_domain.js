@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const domain = require('../api/_billing-domain');
@@ -79,6 +78,18 @@ function baseSubscription(overrides = {}) {
   };
 }
 
+class SubscriptionInstance {
+  constructor(fields) {
+    Object.assign(this, fields);
+  }
+}
+
+class OutcomeInstance {
+  constructor(fields) {
+    Object.assign(this, fields);
+  }
+}
+
 test('exports the approved constants and freezes retry policy', () => {
   assert.equal(PRO_MONTHLY_AMOUNT_KRW, 8900);
   assert.equal(currency, 'KRW');
@@ -150,6 +161,8 @@ test('computes high-cycle periods directly from the original anchor and recovers
   );
   assert.notStrictEqual(cycleOne.start, source);
   assert.equal(source.toISOString(), '2024-01-31T00:00:00.000Z');
+  assertRangeError(() => periodFromAnchor(source, 4_000_000));
+  assertRangeError(() => periodFromAnchor(source, Number.MAX_SAFE_INTEGER));
 });
 
 test('rejects invalid calendar arguments with the contract error types', () => {
@@ -167,21 +180,25 @@ test('rejects invalid calendar arguments with the contract error types', () => {
 });
 
 test('creates deterministic purpose-separated Toss-compatible identifiers', () => {
-  const uid = '한글-user';
+  const uid = 'stable-user-001';
   const periodStart = '2024-01-31T00:00:00.000Z';
   const attempt = 3;
-  const byteLength = Buffer.byteLength(uid, 'utf8');
-  const orderPreimage = `notyx|billing|v1|order|${byteLength}:${uid}|${periodStart}|d${attempt}`;
-  const idempotencyPreimage = `notyx|billing|v1|idempotency|${byteLength}:${uid}|${periodStart}|d${attempt}`;
-  const hash = (value) => crypto.createHash('sha256').update(value, 'utf8').digest('hex');
-  assert.equal(renewalOrderId(uid, periodStart, attempt), `ntx_r_${hash(orderPreimage).slice(0, 48)}`);
-  assert.equal(renewalIdempotencyKey(uid, periodStart, attempt), `ntx_i_${hash(idempotencyPreimage)}`);
-  assert.equal(renewalOrderId(uid, periodStart, attempt).length, 54);
-  assert.equal(renewalIdempotencyKey(uid, periodStart, attempt).length, 70);
-  assert.notEqual(renewalOrderId(uid, periodStart, attempt), renewalOrderId(uid, periodStart, 1));
-  assert.notEqual(renewalOrderId(uid, periodStart, attempt), renewalIdempotencyKey(uid, periodStart, attempt));
-  assert.equal(renewalOrderId(uid, periodStart, attempt).includes(uid), false);
-  assert.equal(renewalOrderId(uid, periodStart, attempt).includes(periodStart), false);
+  const order = renewalOrderId(uid, periodStart, attempt);
+  const idempotency = renewalIdempotencyKey(uid, periodStart, attempt);
+  assert.match(order, /^ntx_r_[0-9a-f]{48}$/);
+  assert.match(idempotency, /^ntx_i_[0-9a-f]{64}$/);
+  assert.equal(order.length, 54);
+  assert.equal(idempotency.length, 70);
+  assert.equal(renewalOrderId(uid, periodStart, attempt), order);
+  assert.equal(renewalIdempotencyKey(uid, periodStart, attempt), idempotency);
+  assert.notEqual(order, renewalOrderId('stable-user-002', periodStart, attempt));
+  assert.notEqual(order, renewalOrderId(uid, '2024-02-29T00:00:00.000Z', attempt));
+  assert.notEqual(order, renewalOrderId(uid, periodStart, 1));
+  assert.notEqual(order, idempotency);
+  assert.equal(order.includes(uid), false);
+  assert.equal(idempotency.includes(uid), false);
+  assert.equal(order.includes(periodStart), false);
+  assert.equal(idempotency.includes(periodStart), false);
 });
 
 test('validates identifier inputs and canonical ISO period starts', () => {
@@ -300,11 +317,21 @@ test('renewal success after day one uses the old due boundary, not retry time', 
     lastPaymentFailedAt: '2024-02-29T00:00:00.000Z',
   });
   const patch = nextRenewalState(old, { type: 'renewal_payment_succeeded', attempt: 1 }, at('2024-03-02T12:00:00.000Z'));
-  assert.equal(patch.currentCycle, 1);
-  assert.equal(patch.currentPeriodStart, '2024-02-29T00:00:00.000Z');
-  assert.equal(patch.currentPeriodEnd, '2024-03-31T00:00:00.000Z');
-  assert.equal(patch.lastPaymentAt, '2024-03-02T12:00:00.000Z');
-  assert.equal(patch.lastPaymentFailedAt, null);
+  assert.deepStrictEqual(patch, {
+    status: 'active',
+    currentCycle: 1,
+    currentPeriodStart: '2024-02-29T00:00:00.000Z',
+    currentPeriodEnd: '2024-03-31T00:00:00.000Z',
+    nextAttemptAt: '2024-03-31T00:00:00.000Z',
+    retryCount: 0,
+    cancelAtPeriodEnd: false,
+    canceledAt: null,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+    lastPaymentAt: '2024-03-02T12:00:00.000Z',
+    lastPaymentFailedAt: null,
+    updatedAt: '2024-03-02T12:00:00.000Z',
+  });
 });
 
 test('renewal success after day three resets retry state from the original period', () => {
@@ -315,11 +342,21 @@ test('renewal success after day three resets retry state from the original perio
     lastPaymentFailedAt: '2024-03-01T00:00:00.000Z',
   });
   const patch = nextRenewalState(old, { type: 'renewal_payment_succeeded', attempt: 3 }, at('2024-03-04T00:00:00.000Z'));
-  assert.equal(patch.currentCycle, 1);
-  assert.equal(patch.currentPeriodStart, '2024-02-29T00:00:00.000Z');
-  assert.equal(patch.currentPeriodEnd, '2024-03-31T00:00:00.000Z');
-  assert.equal(patch.nextAttemptAt, '2024-03-31T00:00:00.000Z');
-  assert.equal(patch.retryCount, 0);
+  assert.deepStrictEqual(patch, {
+    status: 'active',
+    currentCycle: 1,
+    currentPeriodStart: '2024-02-29T00:00:00.000Z',
+    currentPeriodEnd: '2024-03-31T00:00:00.000Z',
+    nextAttemptAt: '2024-03-31T00:00:00.000Z',
+    retryCount: 0,
+    cancelAtPeriodEnd: false,
+    canceledAt: null,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+    lastPaymentAt: '2024-03-04T00:00:00.000Z',
+    lastPaymentFailedAt: null,
+    updatedAt: '2024-03-04T00:00:00.000Z',
+  });
 });
 
 test('renewal failures use exact day-zero, day-one, and day-three Seoul timestamps', () => {
@@ -366,6 +403,7 @@ test('keeps Pro during structurally valid past_due grace before and after a miss
     retryCount: 1,
     nextAttemptAt: '2024-03-01T00:00:00.000Z',
   });
+  assert.equal(hasProEntitlement(subscription, at('2024-01-30T23:59:59.999Z')), false);
   assert.equal(hasProEntitlement(subscription, at('2024-02-29T00:00:00.000Z')), true);
   assert.equal(hasProEntitlement(subscription, at('2024-03-02T00:00:00.000Z')), true);
   assert.equal(hasProEntitlement({ ...subscription, retryCount: 2, nextAttemptAt: '2024-03-03T00:00:00.000Z' }, at('2024-03-04T00:00:00.000Z')), true);
@@ -416,7 +454,10 @@ test('resumes a scheduled cancellation only before period end and is idempotent 
     { cancelAtPeriodEnd: false, canceledAt: null, updatedAt: '2024-02-11T00:00:00.000Z' },
   );
   assert.deepStrictEqual(nextRenewalState(baseSubscription(), { type: 'resume_requested' }, at('2024-02-11T00:00:00.000Z')), {});
+  assertRangeError(() => nextRenewalState(baseSubscription(), { type: 'resume_requested' }, at('2024-02-29T00:00:00.000Z')));
+  assertRangeError(() => nextRenewalState(baseSubscription(), { type: 'resume_requested' }, at('2024-03-01T00:00:00.000Z')));
   assertRangeError(() => nextRenewalState(scheduled, { type: 'resume_requested' }, at('2024-02-29T00:00:00.000Z')));
+  assertRangeError(() => nextRenewalState(scheduled, { type: 'resume_requested' }, at('2024-03-01T00:00:00.000Z')));
   assertRangeError(() => nextRenewalState({ ...scheduled, status: 'canceled' }, { type: 'resume_requested' }, at('2024-02-11T00:00:00.000Z')));
 });
 
@@ -493,43 +534,111 @@ test('sanitizes with an exact field allowlist and does not leak nested server se
   assert.equal(JSON.stringify(sanitized).includes('secret'), false);
 });
 
-test('sanitizes past_due, scheduled cancellation, and terminal status projections', () => {
-  const pastDue = sanitizeSubscription(baseSubscription({
+test('sanitizes every subscription status with a complete exact client projection', () => {
+  const common = {
+    amount: 8900,
+    currency: 'KRW',
+    currentPeriodStart: '2024-01-31T00:00:00.000Z',
+    currentPeriodEnd: '2024-02-29T00:00:00.000Z',
+    cancelAtPeriodEnd: false,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+  };
+  assert.deepStrictEqual(sanitizeSubscription({
+    ...baseSubscription(),
+    status: 'incomplete',
+    anchorAt: null,
+    currentPeriodStart: null,
+    currentPeriodEnd: null,
+    nextAttemptAt: null,
+  }), {
+    status: 'incomplete',
+    amount: 8900,
+    currency: 'KRW',
+    currentPeriodStart: null,
+    currentPeriodEnd: null,
+    nextBillingAt: null,
+    nextRetryAt: null,
+    accessEndsAt: null,
+    cancelAtPeriodEnd: false,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+  });
+  assert.deepStrictEqual(sanitizeSubscription(baseSubscription()), {
+    status: 'active',
+    ...common,
+    nextBillingAt: '2024-02-29T00:00:00.000Z',
+    nextRetryAt: null,
+    accessEndsAt: null,
+    cancelAtPeriodEnd: false,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+  });
+  assert.deepStrictEqual(sanitizeSubscription(baseSubscription({
+    cancelAtPeriodEnd: true,
+    canceledAt: '2024-02-10T00:00:00.000Z',
+  })), {
+    status: 'active',
+    ...common,
+    nextBillingAt: null,
+    nextRetryAt: null,
+    accessEndsAt: '2024-02-29T00:00:00.000Z',
+    cancelAtPeriodEnd: true,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+  });
+  assert.deepStrictEqual(sanitizeSubscription(baseSubscription({
     status: 'past_due',
     retryCount: 1,
     nextAttemptAt: '2024-03-01T00:00:00.000Z',
-  }));
-  assert.equal(pastDue.status, 'past_due');
-  assert.equal(pastDue.nextBillingAt, null);
-  assert.equal(pastDue.nextRetryAt, '2024-03-01T00:00:00.000Z');
-  assert.equal(pastDue.accessEndsAt, null);
-
-  const scheduled = sanitizeSubscription(baseSubscription({
+  })), {
+    status: 'past_due',
+    ...common,
+    nextBillingAt: null,
+    nextRetryAt: '2024-03-01T00:00:00.000Z',
+    accessEndsAt: null,
+    cancelAtPeriodEnd: false,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+  });
+  assert.deepStrictEqual(sanitizeSubscription(baseSubscription({
+    status: 'canceled',
+    nextAttemptAt: null,
+    retryCount: 3,
     cancelAtPeriodEnd: true,
-    canceledAt: '2024-02-10T00:00:00.000Z',
-  }));
-  assert.equal(scheduled.nextBillingAt, null);
-  assert.equal(scheduled.accessEndsAt, '2024-02-29T00:00:00.000Z');
-  assert.equal(scheduled.cancelAtPeriodEnd, true);
-
-  for (const status of ['canceled', 'expired']) {
-    const terminal = sanitizeSubscription(baseSubscription({
-      status,
-      nextAttemptAt: null,
-      retryCount: 3,
-      cancelAtPeriodEnd: status === 'canceled',
-      requiresBillingMethodRegistration: status === 'expired',
-    }));
-    assert.equal(terminal.status, status);
-    assert.equal(terminal.nextBillingAt, null);
-    assert.equal(terminal.nextRetryAt, null);
-    assert.equal(terminal.accessEndsAt, '2024-02-29T00:00:00.000Z');
-  }
+    canceledAt: '2024-02-29T00:00:00.000Z',
+  })), {
+    status: 'canceled',
+    ...common,
+    nextBillingAt: null,
+    nextRetryAt: null,
+    accessEndsAt: '2024-02-29T00:00:00.000Z',
+    cancelAtPeriodEnd: true,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: false,
+  });
+  assert.deepStrictEqual(sanitizeSubscription(baseSubscription({
+    status: 'expired',
+    nextAttemptAt: null,
+    retryCount: 3,
+    requiresBillingMethodRegistration: true,
+  })), {
+    status: 'expired',
+    ...common,
+    nextBillingAt: null,
+    nextRetryAt: null,
+    accessEndsAt: '2024-02-29T00:00:00.000Z',
+    cancelAtPeriodEnd: false,
+    manualRetryRequired: false,
+    requiresBillingMethodRegistration: true,
+  });
 });
 
 test('rejects malformed subscriptions at state and sanitizer boundaries', () => {
   assertTypeError(() => sanitizeSubscription(undefined));
   assertTypeError(() => sanitizeSubscription('subscription'));
+  assertTypeError(() => sanitizeSubscription([]));
+  assertTypeError(() => sanitizeSubscription(new SubscriptionInstance(baseSubscription())));
   assertTypeError(() => sanitizeSubscription(baseSubscription({ status: 123 })));
   assertRangeError(() => sanitizeSubscription({ status: 'active' }));
   assertRangeError(() => sanitizeSubscription(baseSubscription({ amount: 500 })));
@@ -538,6 +647,9 @@ test('rejects malformed subscriptions at state and sanitizer boundaries', () => 
   assertRangeError(() => sanitizeSubscription(baseSubscription({ retryCount: 4 })));
   assertRangeError(() => nextRenewalState(baseSubscription({ currentPeriodEnd: '2024-02-28T00:00:00.000Z' }), { type: 'cancel_requested' }, at('2024-02-10T00:00:00.000Z')));
   assertRangeError(() => nextRenewalState(baseSubscription(), { type: 'cancel_requested' }, at('invalid')));
+  assertTypeError(() => nextRenewalState(new SubscriptionInstance(baseSubscription()), { type: 'cancel_requested' }, at('2024-02-10T00:00:00.000Z')));
+  assertTypeError(() => nextRenewalState(baseSubscription(), new OutcomeInstance({ type: 'cancel_requested' }), at('2024-02-10T00:00:00.000Z')));
+  assertTypeError(() => nextRenewalState(baseSubscription(), [], at('2024-02-10T00:00:00.000Z')));
 });
 
 test('emits canonical ISO dates and updatedAt on every nonempty transition patch', () => {
@@ -554,6 +666,32 @@ test('emits canonical ISO dates and updatedAt on every nonempty transition patch
     for (const [key, value] of Object.entries(patch)) {
       if (/At$/.test(key) && value !== null) assert.equal(iso(value), value, key);
     }
+  }
+});
+
+test('never mutates subscription, outcome, or Date inputs across every transition variant', () => {
+  const cases = [
+    [baseSubscription({ status: 'incomplete', anchorAt: null, currentPeriodStart: null, currentPeriodEnd: null, nextAttemptAt: null, lastPaymentAt: null }), { type: 'initial_payment_succeeded' }, '2024-05-15T03:04:05.006Z'],
+    [baseSubscription({ status: 'incomplete', anchorAt: null, currentPeriodStart: null, currentPeriodEnd: null, nextAttemptAt: null, lastPaymentAt: null }), { type: 'initial_payment_failed' }, '2024-05-15T03:04:05.006Z'],
+    [baseSubscription(), { type: 'renewal_payment_failed_day_0' }, '2024-02-29T00:00:00.000Z'],
+    [baseSubscription({ status: 'past_due', retryCount: 1, nextAttemptAt: '2024-03-01T00:00:00.000Z' }), { type: 'renewal_payment_failed_day_1' }, '2024-03-01T00:00:00.000Z'],
+    [baseSubscription({ status: 'past_due', retryCount: 2, nextAttemptAt: '2024-03-03T00:00:00.000Z' }), { type: 'renewal_payment_failed_day_3' }, '2024-03-03T00:00:00.000Z'],
+    [baseSubscription(), { type: 'renewal_payment_succeeded', attempt: 0 }, '2024-03-01T00:00:00.000Z'],
+    [baseSubscription({ status: 'past_due', retryCount: 1, nextAttemptAt: '2024-03-01T00:00:00.000Z' }), { type: 'renewal_payment_succeeded', attempt: 1 }, '2024-03-02T12:00:00.000Z'],
+    [baseSubscription({ status: 'past_due', retryCount: 2, nextAttemptAt: '2024-03-03T00:00:00.000Z' }), { type: 'renewal_payment_succeeded', attempt: 3 }, '2024-03-04T00:00:00.000Z'],
+    [baseSubscription(), { type: 'cancel_requested' }, '2024-02-10T00:00:00.000Z'],
+    [baseSubscription({ cancelAtPeriodEnd: true, canceledAt: '2024-02-10T00:00:00.000Z' }), { type: 'resume_requested' }, '2024-02-11T00:00:00.000Z'],
+    [baseSubscription({ cancelAtPeriodEnd: true, canceledAt: '2024-02-10T00:00:00.000Z' }), { type: 'period_expired' }, '2024-02-29T00:00:00.000Z'],
+  ];
+  for (const [subscription, outcome, nowValue] of cases) {
+    const subscriptionBefore = JSON.stringify(subscription);
+    const outcomeBefore = JSON.stringify(outcome);
+    const now = at(nowValue);
+    const nowBefore = now.getTime();
+    nextRenewalState(subscription, outcome, now);
+    assert.equal(JSON.stringify(subscription), subscriptionBefore, outcome.type);
+    assert.equal(JSON.stringify(outcome), outcomeBefore, outcome.type);
+    assert.equal(now.getTime(), nowBefore, outcome.type);
   }
 });
 
