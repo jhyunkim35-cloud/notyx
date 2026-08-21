@@ -19,6 +19,8 @@ const OUTCOME_TYPES = new Set([
   'cancel_requested',
   'resume_requested',
   'period_expired',
+  'renewal_payment_succeeded_method_invalid',
+  'renewal_payment_failed_method_invalid',
 ]);
 
 function isDate(value) {
@@ -188,6 +190,8 @@ function validateSubscription(subscription) {
     'canceledAt',
     'manualRetryRequired',
     'requiresBillingMethodRegistration',
+    'renewalReconciliationState',
+    'billingWorkDueAt',
   ]) requireOwn(subscription, field);
   if (typeof subscription.status !== 'string') throw new TypeError('status must be a string');
   if (!STATUSES.has(subscription.status)) throw new RangeError('invalid subscription status');
@@ -200,6 +204,9 @@ function validateSubscription(subscription) {
   requireBoolean(subscription.cancelAtPeriodEnd, 'cancelAtPeriodEnd');
   requireBoolean(subscription.manualRetryRequired, 'manualRetryRequired');
   requireBoolean(subscription.requiresBillingMethodRegistration, 'requiresBillingMethodRegistration');
+  if (typeof subscription.renewalReconciliationState !== 'string') throw new TypeError('renewalReconciliationState must be a string');
+  if (!['none', 'unknown', 'manual'].includes(subscription.renewalReconciliationState)) throw new RangeError('invalid renewal reconciliation state');
+  requireCanonicalIso(subscription.billingWorkDueAt, 'billingWorkDueAt', true);
   requireCanonicalIso(subscription.anchorAt, 'anchorAt', true);
   requireCanonicalIso(subscription.currentPeriodStart, 'currentPeriodStart', true);
   requireCanonicalIso(subscription.currentPeriodEnd, 'currentPeriodEnd', true);
@@ -215,6 +222,7 @@ function validateSubscription(subscription) {
     }
     if (subscription.currentCycle !== 0 || subscription.retryCount !== 0) throw new RangeError('invalid incomplete counters');
     if (subscription.cancelAtPeriodEnd || subscription.canceledAt !== null) throw new RangeError('incomplete subscription cannot be canceled');
+    if (subscription.renewalReconciliationState !== 'none' || subscription.billingWorkDueAt !== null) throw new RangeError('invalid incomplete scheduler state');
     return subscription;
   }
 
@@ -244,7 +252,17 @@ function validateSubscription(subscription) {
       throw new RangeError('invalid past_due retry state');
     }
   } else if (subscription.status === 'canceled' || subscription.status === 'expired') {
-    if (subscription.nextAttemptAt !== null) throw new RangeError('terminal subscription has a next attempt');
+    if (subscription.nextAttemptAt !== null || subscription.renewalReconciliationState !== 'none' || subscription.billingWorkDueAt !== null) throw new RangeError('invalid terminal scheduler state');
+  }
+  if (subscription.renewalReconciliationState === 'none') {
+    if (subscription.billingWorkDueAt !== subscription.nextAttemptAt) throw new RangeError('scheduler does not match next attempt');
+  } else {
+    if (subscription.cancelAtPeriodEnd || subscription.canceledAt !== null) throw new RangeError('unresolved reconciliation cannot be canceled');
+    if (subscription.renewalReconciliationState === 'unknown') {
+      if (subscription.billingWorkDueAt === null || new Date(subscription.billingWorkDueAt).getTime() < new Date(subscription.nextAttemptAt).getTime()) throw new RangeError('invalid unknown scheduler state');
+    } else if (subscription.billingWorkDueAt !== null) {
+      throw new RangeError('manual reconciliation must have no work due');
+    }
   }
   return subscription;
 }
@@ -256,6 +274,10 @@ function validateOutcome(outcome) {
   if (!OUTCOME_TYPES.has(outcome.type)) throw new RangeError('unknown outcome');
   if (outcome.type === 'renewal_payment_succeeded') {
     if (keys.length !== 2 || keys[0] !== 'attempt' || keys[1] !== 'type') throw new RangeError('invalid renewal success outcome');
+    requireInteger(outcome.attempt, 'outcome.attempt', 0, 3);
+    if (!RENEWAL_ATTEMPT_DAYS.includes(outcome.attempt)) throw new RangeError('invalid renewal attempt');
+  } else if (outcome.type === 'renewal_payment_succeeded_method_invalid' || outcome.type === 'renewal_payment_failed_method_invalid') {
+    if (keys.length !== 2 || keys[0] !== 'attempt' || keys[1] !== 'type') throw new RangeError('invalid invalid-method outcome');
     requireInteger(outcome.attempt, 'outcome.attempt', 0, 3);
     if (!RENEWAL_ATTEMPT_DAYS.includes(outcome.attempt)) throw new RangeError('invalid renewal attempt');
   } else if (keys.length !== 1 || keys[0] !== 'type') {
@@ -285,6 +307,8 @@ function initialSuccessPatch(now) {
     requiresBillingMethodRegistration: false,
     lastPaymentAt: isoNow,
     lastPaymentFailedAt: null,
+    renewalReconciliationState: 'none',
+    billingWorkDueAt: period.end.toISOString(),
     updatedAt: isoNow,
   };
 }
@@ -305,6 +329,8 @@ function initialFailurePatch(now) {
     requiresBillingMethodRegistration: false,
     lastPaymentAt: null,
     lastPaymentFailedAt: isoNow,
+    renewalReconciliationState: 'none',
+    billingWorkDueAt: null,
     updatedAt: isoNow,
   };
 }
@@ -325,6 +351,8 @@ function renewalSuccessPatch(subscription, now) {
     requiresBillingMethodRegistration: false,
     lastPaymentAt: isoNow,
     lastPaymentFailedAt: null,
+    renewalReconciliationState: 'none',
+    billingWorkDueAt: period.end.toISOString(),
     updatedAt: isoNow,
   };
 }
@@ -339,6 +367,8 @@ function renewalFailurePatch(subscription, day, now) {
       manualRetryRequired: false,
       requiresBillingMethodRegistration: true,
       lastPaymentFailedAt: isoNow,
+      renewalReconciliationState: 'none',
+      billingWorkDueAt: null,
       updatedAt: isoNow,
     };
   }
@@ -349,6 +379,8 @@ function renewalFailurePatch(subscription, day, now) {
     retryCount,
     nextAttemptAt,
     lastPaymentFailedAt: isoNow,
+    renewalReconciliationState: 'none',
+    billingWorkDueAt: nextAttemptAt,
     updatedAt: isoNow,
   };
 }
@@ -373,7 +405,8 @@ function nextRenewalState(subscription, outcome, now) {
     const validState = (attempt === 0 && checkedSubscription.status === 'active' && checkedSubscription.retryCount === 0)
       || (attempt === 1 && checkedSubscription.status === 'past_due' && checkedSubscription.retryCount === 1)
       || (attempt === 3 && checkedSubscription.status === 'past_due' && checkedSubscription.retryCount === 2);
-    if (!validState || checkedSubscription.cancelAtPeriodEnd) throw new RangeError('invalid renewal success transition');
+    if (!validState || checkedSubscription.cancelAtPeriodEnd || checkedSubscription.requiresBillingMethodRegistration) throw new RangeError('invalid renewal success transition');
+    if (!['none', 'unknown', 'manual'].includes(checkedSubscription.renewalReconciliationState)) throw new RangeError('invalid renewal reconciliation state');
     const due = attempt === 0 ? periodEnd : new Date(checkedSubscription.nextAttemptAt);
     if (checkedNow.getTime() < due.getTime()) throw new RangeError('renewal attempt is early');
     return renewalSuccessPatch(checkedSubscription, checkedNow);
@@ -383,43 +416,92 @@ function nextRenewalState(subscription, outcome, now) {
     const validState = (day === 0 && checkedSubscription.status === 'active' && checkedSubscription.retryCount === 0)
       || (day === 1 && checkedSubscription.status === 'past_due' && checkedSubscription.retryCount === 1)
       || (day === 3 && checkedSubscription.status === 'past_due' && checkedSubscription.retryCount === 2);
-    if (!validState || checkedSubscription.cancelAtPeriodEnd) throw new RangeError('invalid renewal failure transition');
+    if (!validState || checkedSubscription.cancelAtPeriodEnd || checkedSubscription.requiresBillingMethodRegistration) throw new RangeError('invalid renewal failure transition');
+    if (!['none', 'unknown', 'manual'].includes(checkedSubscription.renewalReconciliationState)) throw new RangeError('invalid renewal reconciliation state');
     const due = day === 0 ? periodEnd : new Date(checkedSubscription.nextAttemptAt);
     if (checkedNow.getTime() < due.getTime()) throw new RangeError('renewal attempt is early');
     return renewalFailurePatch(checkedSubscription, day, checkedNow);
   }
+  if (checkedOutcome.type === 'renewal_payment_succeeded_method_invalid' || checkedOutcome.type === 'renewal_payment_failed_method_invalid') {
+    const { attempt } = checkedOutcome;
+    const validState = (attempt === 0 && checkedSubscription.status === 'active' && checkedSubscription.retryCount === 0)
+      || (attempt === 1 && checkedSubscription.status === 'past_due' && checkedSubscription.retryCount === 1)
+      || (attempt === 3 && checkedSubscription.status === 'past_due' && checkedSubscription.retryCount === 2);
+    if (!validState || !['unknown', 'manual'].includes(checkedSubscription.renewalReconciliationState)
+      || !checkedSubscription.requiresBillingMethodRegistration || checkedSubscription.cancelAtPeriodEnd
+      || typeof checkedSubscription.billingMethodInvalidatedAt !== 'string') throw new RangeError('invalid invalid-method transition');
+    requireCanonicalIso(checkedSubscription.billingMethodInvalidatedAt, 'billingMethodInvalidatedAt');
+    if (checkedOutcome.type === 'renewal_payment_succeeded_method_invalid') {
+      const period = periodFromAnchor(new Date(checkedSubscription.anchorAt), checkedSubscription.currentCycle + 1);
+      return {
+        status: 'active',
+        currentCycle: checkedSubscription.currentCycle + 1,
+        currentPeriodStart: period.start.toISOString(),
+        currentPeriodEnd: period.end.toISOString(),
+        nextAttemptAt: period.end.toISOString(),
+        retryCount: 0,
+        cancelAtPeriodEnd: true,
+        canceledAt: checkedSubscription.billingMethodInvalidatedAt,
+        manualRetryRequired: false,
+        requiresBillingMethodRegistration: true,
+        lastPaymentAt: isoNow,
+        lastPaymentFailedAt: null,
+        renewalReconciliationState: 'none',
+        billingWorkDueAt: period.end.toISOString(),
+        updatedAt: isoNow,
+      };
+    }
+    return {
+      status: 'canceled',
+      nextAttemptAt: null,
+      retryCount: checkedSubscription.retryCount,
+      cancelAtPeriodEnd: true,
+      canceledAt: checkedSubscription.billingMethodInvalidatedAt,
+      manualRetryRequired: false,
+      requiresBillingMethodRegistration: true,
+      lastPaymentFailedAt: isoNow,
+      renewalReconciliationState: 'none',
+      billingWorkDueAt: null,
+      updatedAt: isoNow,
+    };
+  }
   if (checkedOutcome.type === 'cancel_requested') {
+    if (checkedSubscription.renewalReconciliationState !== 'none') throw new RangeError('action not allowed during reconciliation');
     if (checkedSubscription.status === 'canceled' || checkedSubscription.status === 'expired') return {};
     if (checkedSubscription.status === 'active') {
       if (checkedSubscription.cancelAtPeriodEnd && checkedNow.getTime() < periodEnd.getTime()) return {};
       if (checkedNow.getTime() < periodEnd.getTime()) {
-        return { cancelAtPeriodEnd: true, canceledAt: isoNow, updatedAt: isoNow };
+        return { cancelAtPeriodEnd: true, canceledAt: isoNow, renewalReconciliationState: 'none', billingWorkDueAt: checkedSubscription.nextAttemptAt, updatedAt: isoNow };
       }
       return {
         status: 'canceled',
         nextAttemptAt: null,
         cancelAtPeriodEnd: true,
         canceledAt: checkedSubscription.canceledAt || isoNow,
+        renewalReconciliationState: 'none',
+        billingWorkDueAt: null,
         updatedAt: isoNow,
       };
     }
     if (checkedSubscription.status === 'past_due') {
-      return { status: 'canceled', nextAttemptAt: null, canceledAt: isoNow, updatedAt: isoNow };
+      return { status: 'canceled', nextAttemptAt: null, canceledAt: isoNow, renewalReconciliationState: 'none', billingWorkDueAt: null, updatedAt: isoNow };
     }
     throw new RangeError('cannot cancel incomplete subscription');
   }
   if (checkedOutcome.type === 'resume_requested') {
+    if (checkedSubscription.renewalReconciliationState !== 'none') throw new RangeError('action not allowed during reconciliation');
     if (checkedSubscription.status !== 'active') throw new RangeError('resume requires active state');
     if (checkedNow.getTime() >= periodEnd.getTime()) throw new RangeError('cannot resume at or after period end');
     if (!checkedSubscription.cancelAtPeriodEnd) return {};
-    return { cancelAtPeriodEnd: false, canceledAt: null, updatedAt: isoNow };
+    return { cancelAtPeriodEnd: false, canceledAt: null, renewalReconciliationState: 'none', billingWorkDueAt: checkedSubscription.nextAttemptAt, updatedAt: isoNow };
   }
   if (checkedOutcome.type === 'period_expired') {
+    if (checkedSubscription.renewalReconciliationState !== 'none') throw new RangeError('action not allowed during reconciliation');
     if (checkedSubscription.status === 'canceled' || checkedSubscription.status === 'expired') return {};
     if (checkedSubscription.status !== 'active' || !checkedSubscription.cancelAtPeriodEnd || checkedNow.getTime() < periodEnd.getTime()) {
       throw new RangeError('period expiry requires scheduled active state at period end');
     }
-    return { status: 'canceled', nextAttemptAt: null, updatedAt: isoNow };
+    return { status: 'canceled', nextAttemptAt: null, renewalReconciliationState: 'none', billingWorkDueAt: null, updatedAt: isoNow };
   }
   throw new RangeError('unhandled outcome');
 }
@@ -432,6 +514,7 @@ function hasProEntitlement(subscription, now) {
     if (checked.status === 'active') {
       const start = new Date(checked.currentPeriodStart).getTime();
       const end = new Date(checked.currentPeriodEnd).getTime();
+      if (checked.renewalReconciliationState === 'unknown' || checked.renewalReconciliationState === 'manual') return checkedNow.getTime() >= start;
       return checkedNow.getTime() >= start && checkedNow.getTime() < end;
     }
     if (checked.status === 'past_due') {
@@ -457,12 +540,13 @@ function sanitizeSubscription(subscription) {
     currency: checked.currency,
     currentPeriodStart: checked.currentPeriodStart,
     currentPeriodEnd: checked.currentPeriodEnd,
-    nextBillingAt: checked.status === 'active' && !checked.cancelAtPeriodEnd ? checked.currentPeriodEnd : null,
-    nextRetryAt: checked.status === 'past_due' ? checked.nextAttemptAt : null,
+    nextBillingAt: checked.status === 'active' && checked.renewalReconciliationState === 'none' && !checked.cancelAtPeriodEnd ? checked.currentPeriodEnd : null,
+    nextRetryAt: checked.status === 'past_due' && checked.renewalReconciliationState === 'none' ? checked.nextAttemptAt : null,
     accessEndsAt: scheduledAccessEnd ? checked.currentPeriodEnd : null,
     cancelAtPeriodEnd: checked.cancelAtPeriodEnd,
     manualRetryRequired: checked.manualRetryRequired,
     requiresBillingMethodRegistration: checked.requiresBillingMethodRegistration,
+    paymentReview: checked.renewalReconciliationState === 'none' ? 'none' : checked.renewalReconciliationState === 'unknown' ? 'in_progress' : 'manual_review',
   };
 }
 
