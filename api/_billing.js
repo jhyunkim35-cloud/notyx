@@ -415,13 +415,22 @@ function dispositionFor(operation, kind, status, providerCode) {
     if (status === 401 || providerCode === 'UNAUTHORIZED_KEY' || providerCode === 'INCORRECT_BASIC_AUTH_FORMAT' || providerCode === 'NOT_SUPPORTED_BILLING_MERCHANT') return 'configuration';
     return 'rejected';
   }
-  if (kind === 'timeout' || kind === 'network' || status === 404 || isRetryableStatus(status)) return 'lookup_again';
+  if (operation === 'lookup' && kind === 'http' && status === 404) return 'order_not_found';
+  if (kind === 'timeout' || kind === 'network' || isRetryableStatus(status)) return 'lookup_again';
   if (status >= 400 && status < 500 && AUTH_CONFIGURATION_CODES.has(providerCode)) return 'configuration';
   return kind === 'invalid_response' ? 'lookup_again' : 'rejected';
 }
 
 function tossError(operation, kind, status = null, providerCode = null) {
   return new TossProviderError(operation, kind, status, providerCode, dispositionFor(operation, kind, status, providerCode));
+}
+
+function isOrderLookupNotFound(error) {
+  return error instanceof TossProviderError
+    && error.operation === 'lookup'
+    && error.kind === 'http'
+    && error.httpStatus === 404
+    && error.disposition === 'order_not_found';
 }
 
 function validateAuthKey(authKey) {
@@ -573,6 +582,7 @@ module.exports = {
   BillingCryptoError,
   TossProviderError,
   BillingPaymentValidationError,
+  isOrderLookupNotFound,
   validateCustomerKey,
   generateCustomerKey,
   fingerprintBillingKey,
@@ -1267,7 +1277,9 @@ function createBillingRepository(options) {
       for (const item of snapshot.docs) {
         const subscription = validateSubscriptionDocument(item.data(), item.id);
         await validateSubscriptionCrossDocument({ get: (ref) => firestore.collection(ref.collection).doc(ref.id).get() }, item.id, subscription);
-        if ((subscription.status === 'active' || subscription.status === 'past_due') && subscription.billingWorkDueAt !== null && subscription.billingWorkDueAt <= atIso) records.push(repositoryClone(subscription));
+        if ((subscription.status === 'active' || subscription.status === 'past_due') && subscription.billingWorkDueAt !== null && subscription.billingWorkDueAt <= atIso) {
+          records.push({ uid: item.id, ...repositoryClone(subscription) });
+        }
       }
       return records;
     } catch (error) {
@@ -1293,6 +1305,28 @@ function createBillingRepository(options) {
     } catch (error) {
       if (error instanceof BillingRepositoryError || error instanceof TypeError || error instanceof RangeError) throw error;
       throw new BillingStorageError('query');
+    }
+  }
+
+  async function findSubscriptionUidByBillingKeyFingerprint(input) {
+    exactKeys(input, ['fingerprint'], [], 'findSubscriptionUidByBillingKeyFingerprint');
+    if (typeof input.fingerprint !== 'string') throw new TypeError('fingerprint must be a string');
+    if (!FINGERPRINT_RE.test(input.fingerprint)) throw new RangeError('fingerprint is invalid');
+    captureNow(now);
+    try {
+      const snapshot = await firestore.collection(SUBSCRIPTIONS_COLLECTION)
+        .where('billingKeyFingerprint', '==', input.fingerprint).limit(2).get();
+      if (snapshot.size === 0) return null;
+      if (snapshot.size > 1) throw new BillingRepositoryInvariantError('document');
+      const uid = snapshot.docs[0].id;
+      const subscription = validateSubscriptionDocument(snapshot.docs[0].data(), uid);
+      if (subscription.renewalReconciliationState !== 'none') {
+        await validateSubscriptionCrossDocument({ get: (ref) => firestore.collection(ref.collection).doc(ref.id).get() }, uid, subscription);
+      }
+      return uid;
+    } catch (error) {
+      if (error instanceof BillingRepositoryError || error instanceof TypeError || error instanceof RangeError) throw error;
+      throw new BillingStorageError('read');
     }
   }
 
@@ -1670,6 +1704,7 @@ function createBillingRepository(options) {
     prepareRenewalOrder,
     listDueSubscriptions,
     findSubscriptionByBillingKeyFingerprint,
+    findSubscriptionUidByBillingKeyFingerprint,
     acquireOrderLease,
     acquireRenewalReconciliationLease,
     storeBillingMethod,

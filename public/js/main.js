@@ -9,9 +9,13 @@ let _appViewBooted = false;
 // inline arrow) so the boot sequence can be exercised directly in tests.
 function applyAuthState(user) {
   _authResolved = true;
+  const previousUid = typeof currentUser !== 'undefined' && currentUser ? currentUser.uid : null;
+  const nextUid = user ? user.uid : null;
+  if (previousUid !== nextUid && typeof clearBillingStatusCache === 'function') clearBillingStatusCache();
   currentUser = user;
   updateAuthUI();
   if (user) {
+    if (typeof getBillingStatus === 'function') getBillingStatus().catch(() => {});
     // Pick the initial app view ONCE, after auth resolved. Doing this at page
     // load (as we used to) selected 'new' for logged-out visitors, which
     // rendered the whole app shell behind the landing screen.
@@ -80,74 +84,87 @@ const _debugPanelInterval = setInterval(() => {
 }, 1000);
 window.addEventListener('beforeunload', () => clearInterval(_debugPanelInterval));
 
-// Handle Toss payment callback
+// Handle one-time Toss payment callbacks and recurring billing returns.
 (async function handlePaymentCallback() {
   const params = new URLSearchParams(window.location.search);
   const paymentStatus = params.get('payment');
-  if (!paymentStatus) return;
+  const billingStatus = params.get('billing');
+  if (!paymentStatus && !billingStatus) return;
 
-  // Clean only payment params from URL — preserve `join` and any future
-  // deeplinks. paymentKey never leaks to history because we strip it here.
+  let billingAuthKey = params.get('authKey');
+  let billingCustomerKey = params.get('customerKey');
   try {
     const url = new URL(window.location.href);
-    ['payment', 'paymentKey', 'orderId', 'amount', 'plan'].forEach(k => url.searchParams.delete(k));
+    ['payment', 'paymentKey', 'orderId', 'amount', 'plan', 'billing', 'authKey', 'customerKey'].forEach(k => url.searchParams.delete(k));
     const q = url.searchParams.toString();
     window.history.replaceState({}, '', url.pathname + (q ? '?' + q : '') + url.hash);
   } catch (_) {
     window.history.replaceState({}, '', window.location.pathname);
   }
 
+  const waitForAuthenticatedUser = () => new Promise(resolve => {
+    if (currentUser) { resolve(true); return; }
+    let settled = false;
+    let unsubscribe = null;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      if (typeof unsubscribe === 'function') { try { unsubscribe(); } catch (_) {} }
+      resolve(value);
+    };
+    unsubscribe = auth.onAuthStateChanged(user => { if (user) finish(true); });
+    setTimeout(() => finish(false), 8000);
+  });
+
+  if (billingStatus) {
+    if (billingStatus === 'fail') {
+      showToast('❌ 결제수단 등록이 취소되었습니다.');
+      billingAuthKey = null;
+      billingCustomerKey = null;
+      return;
+    }
+    if (billingStatus === 'success') {
+      try {
+        const authed = await waitForAuthenticatedUser();
+        if (!authed) {
+          showToast('⚠️ 로그인이 만료되어 정기결제 등록을 완료하지 못했습니다. 다시 로그인 후 새로고침해 주세요.');
+          return;
+        }
+        const result = await activateBilling(billingAuthKey, billingCustomerKey);
+        if (result.outcome === 'active') {
+          showSuccessToast('✅ Notyx Pro가 활성화되었습니다.');
+          await getBillingStatus(true).catch(() => null);
+          if (typeof renderHomeView === 'function') await renderHomeView();
+        } else {
+          showToast('결제 결과를 확인 중입니다. 잠시 후 상태를 다시 확인해 주세요.');
+        }
+      } catch (error) {
+        showToast('❌ 정기결제 등록 실패: ' + error.message);
+      } finally {
+        billingAuthKey = null;
+        billingCustomerKey = null;
+      }
+    }
+    return;
+  }
+
   if (paymentStatus === 'success') {
     const paymentKey = params.get('paymentKey');
     const orderId = params.get('orderId');
     const amount = params.get('amount');
-    const plan = params.get('plan'); // kept for diagnostics; not used for state
-
     try {
-      // P1-2: bound the auth wait with a timeout. If the user's session
-      // expired while they sat on the Toss checkout page, the old
-      // `onAuthStateChanged(u => if(u) resolve())` never fired — it
-      // resolves only on a *logged-in* user, so a null callback left this
-      // await hanging forever. Toss charged the card but we never confirmed
-      // the payment and the user just saw a dead spinner. Resolve to a flag
-      // and time out (8s) so we always surface actionable feedback. The
-      // server's paymentLog idempotency makes a later retry safe.
-      const authed = await new Promise(resolve => {
-        if (currentUser) { resolve(true); return; }
-        let settled = false;
-        let unsub = null;
-        const finish = (v) => {
-          if (settled) return;
-          settled = true;
-          if (typeof unsub === 'function') { try { unsub(); } catch (_) {} }
-          resolve(v);
-        };
-        unsub = auth.onAuthStateChanged(u => { if (u) finish(true); });
-        setTimeout(() => finish(false), 8000);
-      });
-
+      const authed = await waitForAuthenticatedUser();
       if (!authed) {
-        console.error('[payment] auth wait timed out; payment unconfirmed. orderId=', orderId);
-        showToast('⚠️ 결제는 완료됐지만 로그인이 만료되어 자동 확인에 실패했습니다. 다시 로그인 후 새로고침해 주세요. 문제가 계속되면 문의 시 주문번호를 알려주세요: ' + (orderId || '알 수 없음'));
+        showToast('⚠️ 결제는 완료됐지만 로그인이 만료되어 자동 확인에 실패했습니다. 다시 로그인 후 새로고침해 주세요.');
         return;
       }
-
-      // Get fresh Firebase ID token — backend now requires this and
-      // ignores any uid in the body. Without the header the server
-      // would reject the request with 401 auth_required.
       const idToken = await currentUser.getIdToken();
-
-      // Verify payment on server — server derives plan from Toss-verified amount and writes Firestore
       const res = await fetch('/api/toss', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + idToken,
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
         body: JSON.stringify({ paymentKey, orderId, amount: Number(amount) })
       });
       const result = await res.json();
-
       if (result.success) {
         const planLabel = result.plan === 'monthly' ? '월간 무제한' : '단건';
         showSuccessToast(`✅ 결제 완료! ${planLabel} 플랜이 활성화되었습니다.`);
@@ -155,8 +172,8 @@ window.addEventListener('beforeunload', () => clearInterval(_debugPanelInterval)
       } else {
         showToast('❌ 결제 확인 실패: ' + (result.message || ''));
       }
-    } catch (e) {
-      showToast('❌ 결제 확인 오류: ' + e.message);
+    } catch (error) {
+      showToast('❌ 결제 확인 오류: ' + error.message);
     }
   } else if (paymentStatus === 'fail') {
     showToast('❌ 결제가 취소되었습니다.');

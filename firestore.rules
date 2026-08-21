@@ -78,6 +78,16 @@ service cloud.firestore {
       }
     }
 
+    // Billing records are server-authoritative. Browser clients must use the
+    // authenticated billing API and never read or write these collections.
+    match /subscriptions/{uid} {
+      allow read, write: if false;
+    }
+
+    match /billingOrders/{orderId} {
+      allow read, write: if false;
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Shared collections (top-level) — multi-user features.
     // Membership lives in `memberUids` (array). Reads gate on that array.

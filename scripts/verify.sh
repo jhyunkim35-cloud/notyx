@@ -62,6 +62,34 @@ run_storage2_suite scripts/test_storage2_sync.js
 run_storage2_suite scripts/test_storage2_lifecycle.js
 [ "$storage2_bad" -eq 0 ] && ok "STORAGE2 결정론적 테스트 ${storage2_n}개 통과"
 
+# ①c Recurring billing deterministic contract suites -----------------------
+hdr "Recurring billing deterministic tests"
+billing_n=0; billing_bad=0
+run_billing_suite() {
+  local f="$1" output status
+  billing_n=$((billing_n+1))
+  output=$(node "$f" 2>&1)
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    ok "billing: $f"
+  else
+    red "billing: $f"
+    printf '%s\n' "$output" | sed 's/^/      /'
+    billing_bad=$((billing_bad+1))
+  fi
+}
+run_billing_suite scripts/test_billing_domain.js
+run_billing_suite scripts/test_billing_crypto.js
+run_billing_suite scripts/test_billing_provider.js
+run_billing_suite scripts/test_billing_repository.js
+run_billing_suite scripts/test_billing_api.js
+run_billing_suite scripts/test_billing_renewal.js
+run_billing_suite scripts/test_billing_entitlement.js
+run_billing_suite scripts/test_billing_ui.js
+run_billing_suite scripts/test_toss_webhook.js
+run_billing_suite scripts/test_toss_products.js
+[ "$billing_bad" -eq 0 ] && ok "Recurring billing deterministic tests ${billing_n} passed"
+
 # ② 모지바케 (U+FFFD) — 추적 텍스트 전체 -----------------------------------
 hdr "한글 모지바케 스캔 (U+FFFD)"
 FFFD=$(printf '\xEF\xBF\xBD')

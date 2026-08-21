@@ -230,6 +230,107 @@ a.ny-btn {
   padding: 0.7rem 1.25rem;
 }
 
+/* ── payment dialog ---------------------------------------------------------
+   Payment controls use the same button geometry as the rest of Notyx. */
+
+.ny-payment-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ny-space-4);
+  background: var(--ny-scrim);
+}
+
+.ny-payment-dialog {
+  width: min(100%, 27rem);
+  max-height: calc(100vh - (2 * var(--ny-space-4)));
+  overflow-y: auto;
+  padding: var(--ny-space-6);
+  border: 1px solid var(--ny-border);
+  border-radius: var(--ny-radius-lg);
+  background: var(--ny-surface);
+  color: var(--ny-text);
+  box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.28);
+}
+
+.ny-payment-title {
+  margin: 0 0 var(--ny-space-2);
+  color: var(--ny-text);
+  font-size: 1.25rem;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}
+
+.ny-payment-copy {
+  margin: 0 0 var(--ny-space-5);
+  color: var(--ny-text-muted);
+  font-size: var(--ny-text-body-size);
+  line-height: 1.7;
+}
+
+.ny-payment-options {
+  display: grid;
+  gap: var(--ny-space-3);
+  margin-bottom: var(--ny-space-5);
+}
+
+.ny-payment-option {
+  display: block;
+  width: 100%;
+  min-height: 5rem;
+  padding: var(--ny-space-4);
+  border: 1px solid var(--ny-border);
+  border-radius: var(--ny-radius-md);
+  background: var(--ny-surface-sunken);
+  color: var(--ny-text);
+  font-family: var(--ny-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ny-payment-option:hover {
+  border-color: var(--ny-border-strong);
+  background: var(--ny-fill-subtle);
+}
+
+.ny-payment-option-primary {
+  border-color: var(--ny-text);
+  background: var(--ny-fill-subtle);
+}
+
+.ny-payment-option-title {
+  display: block;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.ny-payment-option-detail {
+  display: block;
+  margin-top: var(--ny-space-1);
+  color: var(--ny-text-muted);
+  font-size: var(--ny-text-caption-size);
+  line-height: 1.55;
+}
+
+.ny-payment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ny-space-2);
+  margin: var(--ny-space-4) 0 var(--ny-space-5);
+}
+
+.ny-payment-actions .ny-btn {
+  flex: 1 1 12rem;
+}
+
+.ny-payment-close {
+  width: 100%;
+}
+
 /* ── ny-seg (segmented control) ─────────────────────────────────────────── */
 
 .ny-seg {
@@ -809,6 +910,9 @@ mark.ny-hl.ny-hl-draw,
   gap: var(--ny-space-3);
   margin-top: var(--ny-space-6);
 }
+.ny-hero-cta .ny-btn {
+  min-width: 10rem;
+}
 .ny-hero-note {
   margin-top: var(--ny-space-3);
   font-size: var(--ny-text-caption-size);
@@ -1093,6 +1197,19 @@ mark.ny-hl.ny-hl-draw,
   .ny-hero-cta {
     flex-direction: column;
     align-items: stretch;
+  }
+  .ny-hero-cta .ny-btn {
+    width: 100%;
+  }
+  .ny-nav-actions {
+    gap: var(--ny-space-1);
+  }
+  .ny-nav-cta {
+    padding-inline: var(--ny-space-3);
+    font-size: var(--ny-text-caption-size);
+  }
+  .ny-payment-dialog {
+    padding: var(--ny-space-5);
   }
 }
 @media (max-width: 720px) {

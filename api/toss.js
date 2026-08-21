@@ -1,5 +1,18 @@
 const { getAdmin } = require('./_firebase-admin');
-const { grantEntitlement } = require('./_grant');
+const { grantEntitlement, sttPriceForUnits } = require('./_grant');
+
+function isAllowedSttAmount(amount) {
+  for (let units = 1; units <= 200; units += 1) {
+    if (sttPriceForUnits(units) === amount) return true;
+  }
+  return false;
+}
+
+function isAllowedOneTimeProduct(amount, kind) {
+  if (!Number.isSafeInteger(amount)) return false;
+  if (amount === 500) return kind === undefined || kind === 'single';
+  return kind === 'sttEntitlement' && isAllowedSttAmount(amount);
+}
 
 module.exports = async function handler(req, res) {
   // CORS — both legacy and post-rebrand origins until DNS swap is complete
@@ -37,6 +50,10 @@ module.exports = async function handler(req, res) {
   if (!paymentKey || !orderId || !amount) {
     return res.status(400).json({ success: false, message: 'Missing parameters' });
   }
+  const requestedAmount = Number(amount);
+  if (!isAllowedOneTimeProduct(requestedAmount, kind)) {
+    return res.status(400).json({ success: false, message: 'Unsupported one-time payment product' });
+  }
 
   // ─── Idempotency: refuse to re-process the same paymentKey. Without
   //          this, a client retry between Toss confirm and our response
@@ -67,12 +84,12 @@ module.exports = async function handler(req, res) {
         'Authorization': 'Basic ' + encoded,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ paymentKey, orderId, amount }),
+      body: JSON.stringify({ paymentKey, orderId, amount: requestedAmount }),
     });
 
     const data = await response.json();
 
-    if (response.ok && data.status === 'DONE') {
+    if (response.ok && data.status === 'DONE' && data.totalAmount === requestedAmount) {
       const result = await grantEntitlement({
         uid, kind, minutes,
         paymentKey, orderId,
@@ -92,3 +109,5 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ success: false, message: e.message });
   }
 };
+
+module.exports.isAllowedOneTimeProduct = isAllowedOneTimeProduct;

@@ -10,7 +10,11 @@
     "api/admin.js":        { "maxDuration": 30 },
     "api/toss.js":         { "maxDuration": 30 },
     "api/group-create.js": { "maxDuration": 30 },
-    "api/group-join.js":   { "maxDuration": 15 }
+    "api/group-join.js":   { "maxDuration": 15 },
+    "api/billing.js":      { "maxDuration": 120 },
+    "api/payment-config.js": { "maxDuration": 10 },
+    "api/billing-cron.js": { "maxDuration": 120 },
+    "api/toss-webhook.js": { "maxDuration": 30 }
   },
   "headers": [
     {
@@ -31,4 +35,3 @@
     }
   ]
 }
-

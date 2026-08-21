@@ -1,5 +1,244 @@
-// Payment: usage quota, plan management, Toss payment flow.
+// Payment: usage quota, one-time payments, and Toss recurring billing.
 // Depends on: constants.js (currentUser, db, DEVELOPER_EMAILS), ui.js (showToast).
+
+const PRO_MONTHLY_AMOUNT_KRW = 8900;
+const PAYMENT_CONFIG_ENDPOINT = '/api/payment-config';
+const BILLING_ENDPOINT = '/api/billing';
+let _paymentConfigPromise = null;
+let _billingStatusPromise = null;
+let _billingStatus = null;
+let _billingStatusUid = null;
+
+function paymentError(message, code) {
+  const error = new Error(message || '결제 요청을 처리할 수 없습니다.');
+  error.code = code || 'payment_error';
+  return error;
+}
+
+async function getPaymentConfig() {
+  if (!_paymentConfigPromise) {
+    _paymentConfigPromise = fetch(PAYMENT_CONFIG_ENDPOINT, { cache: 'no-store' })
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body || typeof body !== 'object') throw paymentError('결제 설정을 불러오지 못했습니다.', 'config_error');
+        return body;
+      })
+      .catch(error => {
+        _paymentConfigPromise = null;
+        throw error;
+      });
+  }
+  return _paymentConfigPromise;
+}
+
+async function billingRequest(action, fields = {}) {
+  if (!currentUser || typeof currentUser.getIdToken !== 'function') throw paymentError('로그인이 필요합니다.', 'unauthorized');
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch(BILLING_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+    body: JSON.stringify({ action, ...fields }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.ok === false) {
+    const error = paymentError(body.error?.message || '정기결제 요청을 처리하지 못했습니다.', body.error?.code);
+    error.response = body;
+    throw error;
+  }
+  return body;
+}
+
+function billingDateLabel(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('ko-KR');
+}
+
+function billingActionButton(label, action, variant = 'ny-btn-secondary') {
+  return `<button type="button" class="ny-btn ${variant}" data-billing-action="${action}" onclick="${action}()">${label}</button>`;
+}
+
+function getStatusPresentation(subscription, legacy) {
+  if (legacy && legacy.status === 'active_nonrenewing') {
+    return {
+      showUpgrade: true,
+      title: '기존 월정액 이용 중',
+      html: `기존 월정액은 <strong>갱신되지 않는</strong> 이용권입니다. ${billingDateLabel(legacy.accessEndsAt)}까지 이용할 수 있습니다. 새 구독은 월 <strong>8,900원</strong>입니다.`,
+    };
+  }
+  if (!subscription || subscription.status === 'free') {
+    return {
+      showUpgrade: true,
+      title: 'Notyx Pro로 업그레이드',
+      html: '매달 <strong>무료 3회</strong>까지 이용할 수 있으며, 이후 1회 이용권은 <strong>500원</strong>, Pro는 <strong>8,900원/월</strong>입니다.',
+    };
+  }
+  if (subscription.paymentReview === 'in_progress') {
+    return { showUpgrade: false, title: '결제 결과 확인 중', html: '결제 결과 확인 중입니다. 잠시 후 상태를 다시 확인해 주세요.' };
+  }
+  if (subscription.paymentReview === 'manual_review') {
+    return { showUpgrade: false, title: '수동 확인 필요', html: '결제 결과를 수동 확인 중입니다. 확인이 끝날 때까지 구독 상태를 변경할 수 없습니다.' };
+  }
+  if (subscription.status === 'past_due') {
+    const retryAt = billingDateLabel(subscription.nextRetryAt);
+    return {
+      showUpgrade: false,
+      title: '결제수단 확인 필요',
+      html: `현재 Pro 이용은 유지됩니다. ${retryAt ? `<strong>${retryAt}</strong>에 다음 재시도를 진행합니다.` : '다음 재시도를 준비 중입니다.'} 결제수단을 확인해 주세요.`,
+    };
+  }
+  if (subscription.status === 'expired' || subscription.status === 'canceled') {
+    return {
+      showUpgrade: true,
+      title: 'Pro 이용 종료',
+      html: 'Pro 이용이 종료되었습니다. 계속 이용하려면 결제수단을 <strong>다시 등록</strong>해 주세요.',
+    };
+  }
+  if (subscription.status === 'incomplete') {
+    return {
+      showUpgrade: true,
+      title: '결제 등록을 완료해 주세요',
+      html: subscription.manualRetryRequired
+        ? '첫 결제가 완료되지 않았습니다. 결제수단을 다시 확인하거나 <strong>다시 등록</strong>해 주세요.'
+        : '결제수단 등록을 진행하면 Pro를 이용할 수 있습니다.',
+    };
+  }
+  if (subscription.cancelAtPeriodEnd) {
+    return {
+      showUpgrade: false,
+      title: 'Pro 해지 예약됨',
+      html: `${billingDateLabel(subscription.accessEndsAt)}까지 이용할 수 있습니다. 해지는 현재 이용기간 종료 시 적용되며 자동 환불되지 않습니다. 종료 전에는 구독을 <strong>재개</strong>할 수 있습니다.`,
+    };
+  }
+  return {
+    showUpgrade: false,
+    title: 'Notyx Pro 구독 중',
+    html: `${subscription.nextBillingAt ? `<strong>다음 결제일 ${billingDateLabel(subscription.nextBillingAt)}</strong>` : '다음 결제일을 확인 중입니다.'} · 월 ${PRO_MONTHLY_AMOUNT_KRW.toLocaleString('ko-KR')}원 자동 결제`,
+  };
+}
+
+function shouldHideUpgradeButtons(subscription) {
+  return Boolean(subscription && (subscription.status === 'active' || subscription.status === 'past_due'));
+}
+
+function updateUpgradeButtons(subscription) {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  const hidden = shouldHideUpgradeButtons(subscription);
+  document.querySelectorAll('[data-upgrade-button], #sidebarUpgradeBtn').forEach(button => {
+    button.hidden = hidden;
+    button.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+  });
+}
+
+function currentBillingUid() {
+  return typeof currentUser !== 'undefined' && currentUser && typeof currentUser.uid === 'string'
+    ? currentUser.uid
+    : null;
+}
+
+function clearBillingStatusCache() {
+  _billingStatusPromise = null;
+  _billingStatus = null;
+  _billingStatusUid = null;
+}
+
+async function getBillingStatus(force = false) {
+  const uid = currentBillingUid();
+  if (_billingStatusUid !== uid) {
+    clearBillingStatusCache();
+    _billingStatusUid = uid;
+  }
+  if (!uid) throw paymentError('로그인이 필요합니다.', 'unauthorized');
+  if (force) {
+    _billingStatusPromise = null;
+    _billingStatus = null;
+  }
+  if (!_billingStatusPromise) {
+    _billingStatusPromise = billingRequest('status')
+      .then(result => {
+        if (_billingStatusUid === uid && currentBillingUid() === uid) {
+          _billingStatus = result;
+          updateUpgradeButtons(result.subscription);
+        }
+        return result;
+      })
+      .catch(error => {
+        if (_billingStatusUid === uid) _billingStatusPromise = null;
+        throw error;
+      });
+  }
+  return _billingStatusPromise;
+}
+
+function billingStatusActions(status) {
+  const subscription = status && status.subscription;
+  if (!subscription) return `<div class="ny-payment-actions">${billingActionButton('Pro 시작하기', 'startProSubscription', 'ny-btn-primary')}</div>`;
+  if (subscription.status === 'active' && subscription.paymentReview === 'none') {
+    if (subscription.cancelAtPeriodEnd) return `<div class="ny-payment-actions">${billingActionButton('구독 재개', 'resumeSubscription', 'ny-btn-primary')}</div>`;
+    return `<div class="ny-payment-actions">${billingActionButton('기간 종료 시 해지', 'cancelSubscription')}</div>`;
+  }
+  if (subscription.status === 'past_due') return `<div class="ny-payment-actions">${billingActionButton('결제수단 확인 후 재시도', 'retryBilling', 'ny-btn-primary')}</div>`;
+  if (subscription.status === 'expired' || subscription.status === 'canceled' || subscription.status === 'incomplete') {
+    return `<div class="ny-payment-actions">${billingActionButton('결제수단 다시 등록', 'startProSubscription', 'ny-btn-primary')}</div>`;
+  }
+  return '';
+}
+
+async function startProSubscription() {
+  document.querySelector('.ny-payment-overlay')?.remove();
+  if (!currentUser) { showToast('로그인이 필요합니다.'); return; }
+  try {
+    const [config, prepared] = await Promise.all([getPaymentConfig(), billingRequest('prepare')]);
+    if (!config.billingClientKey) throw paymentError('현재 정기결제를 이용할 수 없습니다.', 'billing_unavailable');
+    const tossPayments = TossPayments(config.billingClientKey);
+    const payment = tossPayments.payment({ customerKey: prepared.customerKey });
+    await payment.requestBillingAuth({
+      method: 'CARD',
+      customerEmail: currentUser.email,
+      customerName: currentUser.displayName || '사용자',
+      successUrl: prepared.successUrl,
+      failUrl: prepared.failUrl,
+    });
+  } catch (error) {
+    if (error.code === 'USER_CANCEL') return;
+    showToast('❌ 정기결제 등록 실패: ' + error.message);
+  }
+}
+
+async function activateBilling(authKey, customerKey) {
+  return billingRequest('activate', { authKey, customerKey });
+}
+
+async function performBillingAction(action) {
+  try {
+    const result = await billingRequest(action);
+    _billingStatusPromise = null;
+    await getBillingStatus(true).catch(() => null);
+    if (result.outcome === 'pending') showToast('결제 결과를 확인 중입니다. 잠시 후 다시 확인해 주세요.');
+    else if (result.outcome === 'active') showSuccessToast('✅ Notyx Pro가 활성화되었습니다.');
+    else showToast('요청이 처리되었습니다.');
+    return result;
+  } catch (error) {
+    const response = error.response;
+    if (response && response.subscription) {
+      _billingStatus = { subscription: response.subscription, legacy: null };
+      updateUpgradeButtons(response.subscription);
+    }
+    showToast('❌ ' + error.message);
+    return null;
+  }
+}
+
+function cancelSubscription() { return performBillingAction('cancel'); }
+function resumeSubscription() { return performBillingAction('resume'); }
+function retryBilling() { return performBillingAction('retry'); }
+
+window.NotyxBillingUI = Object.freeze({
+  getStatusPresentation,
+  shouldHideUpgradeButtons,
+  getBillingStatus,
+  clearBillingStatusCache,
+});
 
 /* ═══════════════════════════════════════════════
    STT per-use pricing
@@ -110,73 +349,53 @@ function payForSttEntitlement(audioMinutes) {
 // real monthlyCount/plan instead of the hardcoded "3회 모두 사용" string
 // that fired even when the user had 0/3.
 async function showPaymentModal(context = 'quota_exceeded') {
-  // Best-effort usage fetch — modal still works if Firestore is offline.
-  let usage = { monthlyCount: 0, plan: 'free', planExpiry: null };
+  let usage = { monthlyCount: 0, plan: 'free' };
+  let status = _billingStatus;
   try { usage = await getUserUsage(); } catch (_) {}
-
-  let headline;
-  let sub;
-  // If the user is already on monthly, every entry point should congratulate
-  // them rather than try to upsell — selling a plan they already have is
-  // the most embarrassing failure mode for this modal.
-  if (usage.plan === 'monthly') {
-    headline = '✨ Notyx Pro 구독 중';
-    const expiryStr = usage.planExpiry
-      ? new Date(usage.planExpiry).toLocaleDateString('ko-KR')
-      : '';
-    sub = expiryStr
-      ? `${expiryStr}까지 무제한 이용 가능합니다.`
-      : '무제한 이용 중입니다.';
-  } else if (context === 'voluntary') {
-    headline = '💎 Notyx Pro로 업그레이드';
-    sub = `무제한 노트 생성 · 강의당 ₩500 없음 · 현재 이번 달 ${usage.monthlyCount}/3회 사용`;
-  } else if (context === 'low_remaining') {
-    const remaining = Math.max(0, 3 - usage.monthlyCount);
-    headline = `⚡ 무료 ${remaining}회 남았어요`;
-    sub = '무제한 이용권으로 끊김 없이 분석하세요.';
-  } else {
-    // 'quota_exceeded' (default)
-    headline = '🔒 무료 이용 한도 초과';
-    sub = `이번 달 무료 3회(${usage.monthlyCount}/3)를 모두 사용했습니다.`;
-  }
-
-  // For monthly subscribers, hide the purchase buttons entirely — show
-  // only the close button and a friendly thanks.
-  const buttonsHtml = usage.plan === 'monthly' ? '' : `
-      <div style="display:flex;flex-direction:column;gap:0.8rem;margin-bottom:1.5rem;">
-        <button onclick="startPayment('single')" style="padding:1rem;border:2px solid var(--primary);border-radius:12px;background:transparent;color:var(--text);cursor:pointer;text-align:left;">
-          <div style="font-weight:700;font-size:1rem;">📝 1회 이용권 — ₩500</div>
-          <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem;">이번 분석 1회만 결제</div>
+  try { status = await getBillingStatus(); } catch (_) {}
+  const presentation = getStatusPresentation(status && status.subscription, status && status.legacy);
+  const headline = presentation.title || (context === 'low_remaining' ? '무료 이용 안내' : '결제 안내');
+  const sub = presentation.html || `이번 달 무료 3회(${usage.monthlyCount}/3)를 모두 사용했습니다.`;
+  const buttonsHtml = presentation.showUpgrade ? `
+      <div class="ny-payment-options">
+        <button type="button" class="ny-payment-option" onclick="startPayment('single')">
+          <span class="ny-payment-option-title">1회 이용권 — ₩500</span>
+          <span class="ny-payment-option-detail">이번 분석 1회만 결제</span>
         </button>
-        <button onclick="startPayment('monthly')" style="padding:1rem;border:2px solid var(--secondary);border-radius:12px;background:var(--primary-dim);color:var(--text);cursor:pointer;text-align:left;">
-          <div style="font-weight:700;font-size:1rem;">🎓 월정액 — ₩7,900/월</div>
-          <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.3rem;">한 달간 무제한 이용</div>
+        <button type="button" class="ny-payment-option ny-payment-option-primary" onclick="startProSubscription()">
+          <span class="ny-payment-option-title">Notyx Pro — ₩8,900/월</span>
+          <span class="ny-payment-option-detail">부가세 포함 · 매월 자동 결제 · 현재 이용기간 종료 시 해지</span>
         </button>
-      </div>`;
+      </div>` : billingStatusActions(status);
 
   const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  overlay.className = 'ny-payment-overlay';
   overlay.innerHTML = `
-    <div style="background:var(--surface);border-radius:16px;padding:2rem;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-      <h2 style="margin:0 0 0.5rem;font-size:1.3rem;color:var(--text);">${headline}</h2>
-      <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1.5rem;">${sub}</p>
+    <div class="ny-payment-dialog" role="dialog" aria-modal="true" aria-labelledby="ny-payment-title">
+      <h2 id="ny-payment-title" class="ny-payment-title">${headline}</h2>
+      <p class="ny-payment-copy">${sub}</p>
       ${buttonsHtml}
-      <button onclick="this.closest('div[style*=fixed]').remove()" style="width:100%;padding:0.7rem;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.85rem;">닫기</button>
+      <button type="button" class="ny-btn ny-btn-ghost ny-payment-close" onclick="this.closest('.ny-payment-overlay').remove()">닫기</button>
     </div>
   `;
   document.body.appendChild(overlay);
+  overlay.querySelector('button')?.focus();
 }
 
 async function startPayment(plan) {
   // Close payment modal
-  document.querySelector('div[style*="position:fixed"][style*="z-index:10000"]')?.remove();
+  document.querySelector('.ny-payment-overlay')?.remove();
 
-  const amount = plan === 'monthly' ? 7900 : 500;
-  const orderName = plan === 'monthly' ? 'Notyx 월정액' : 'Notyx 1회 이용권';
+  if (plan === 'monthly') return startProSubscription();
+
+  const amount = 500;
+  const orderName = 'Notyx 1회 이용권';
   const orderId = 'order_' + currentUser.uid.substring(0, 8) + '_' + Date.now();
 
   try {
-    const tossPayments = TossPayments('test_ck_mBZ1gQ4YVXBjEx6651Wj8l2KPoqN');
+    const config = await getPaymentConfig();
+    if (!config.oneTimeClientKey) throw paymentError('현재 1회 결제를 이용할 수 없습니다.', 'payment_unavailable');
+    const tossPayments = TossPayments(config.oneTimeClientKey);
     const payment = tossPayments.payment({ customerKey: currentUser.uid });
 
     await payment.requestPayment({
@@ -208,11 +427,23 @@ async function getUserUsage() {
   const now = new Date();
   const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   const count = (data.usage && data.usage[monthKey]) || 0;
-  const plan = data.plan || 'free';
-  const planExpiry = data.planExpiry || null;
-  // Check if paid plan expired
-  if (plan === 'monthly' && planExpiry && new Date(planExpiry) < now) {
-    return { monthlyCount: count, plan: 'free', planExpiry: null };
+  let plan = 'free';
+  let planExpiry = null;
+  try {
+    const status = await getBillingStatus();
+    if (status.subscription && (status.subscription.status === 'active' || status.subscription.status === 'past_due')) plan = 'monthly';
+    if (status.legacy && status.legacy.status === 'active_nonrenewing') {
+      plan = 'monthly';
+      planExpiry = status.legacy.accessEndsAt;
+    }
+  } catch (_) {
+    // The server remains authoritative; this fallback only keeps the legacy UI usable offline.
+    plan = data.plan || 'free';
+    planExpiry = data.planExpiry || null;
+    if (plan === 'monthly' && planExpiry && new Date(planExpiry) < now) {
+      plan = 'free';
+      planExpiry = null;
+    }
   }
   return { monthlyCount: count, plan, planExpiry };
 }
@@ -237,11 +468,7 @@ async function canAnalyze() {
 async function setPaidPlan(plan, orderId) {
   if (!currentUser) return;
   const ref = db.collection('users').doc(currentUser.uid);
-  if (plan === 'monthly') {
-    const expiry = new Date();
-    expiry.setMonth(expiry.getMonth() + 1);
-    await ref.set({ plan: 'monthly', planExpiry: expiry.toISOString(), lastOrderId: orderId }, { merge: true });
-  } else if (plan === 'single') {
+  if (plan === 'single') {
     const now = new Date();
     const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     await ref.set({ singlePurchases: firebase.firestore.FieldValue.increment(1), lastOrderId: orderId }, { merge: true });

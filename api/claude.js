@@ -1,6 +1,7 @@
 const fetch = globalThis.fetch || require('node-fetch');
 const { getAdmin } = require('./_firebase-admin');
 const { recordUsage } = require('./_usage');
+const { resolveAnalysisEntitlement } = require('./_grant');
 
 // Extract token counts from accumulated SSE text.
 // message_start carries input/cache counts; message_delta carries output count.
@@ -115,35 +116,15 @@ async function checkQuota(idToken) {
     return { allowed: true, uid, email, slot: 'developer' };
   }
 
-  const ref = admin.firestore().collection('users').doc(uid);
-  const snap = await ref.get();
-  const data = snap.exists ? snap.data() : {};
-
   const now = new Date();
-  const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  const monthCount = (data.usage && data.usage[monthKey]) || 0;
-  const plan = data.plan || 'free';
-  const planExpiry = data.planExpiry ? new Date(data.planExpiry) : null;
-
-  // Monthly plan with valid expiry — 무제한 (준현 지시: univ 대비 우위 유지).
-  // U16 개정: 차단 캡 없음. usage[monthKey] 카운팅만 유지(원가 모니터링·고래 감지용)
-  // — 손해 방지는 원가 절감(U11·U12 캐시)으로 달성.
-  if (plan === 'monthly' && planExpiry && planExpiry > now) {
-    return { allowed: true, uid, email, slot: 'monthly', monthKey };
-  }
-
-  // Free tier — 3 per month
-  if (monthCount < 3) {
-    return { allowed: true, uid, email, slot: 'free', monthKey };
-  }
-
-  // Single-purchase quota
-  const singlePurchases = data.singlePurchases || 0;
-  if (singlePurchases > 0) {
-    return { allowed: true, uid, email, slot: 'single', monthKey };
-  }
-
-  return { allowed: false, reason: 'quota_exceeded', uid, email, monthCount };
+  const subscriptionSnap = await admin.firestore().collection('subscriptions').doc(uid).get();
+  const userSnap = await admin.firestore().collection('users').doc(uid).get();
+  const entitlement = resolveAnalysisEntitlement({
+    subscription: subscriptionSnap.exists ? subscriptionSnap.data() : null,
+    user: userSnap.exists ? userSnap.data() : {},
+    now,
+  });
+  return { ...entitlement, uid, email };
 }
 
 module.exports = async (req, res) => {

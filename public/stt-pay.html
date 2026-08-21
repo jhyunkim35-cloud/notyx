@@ -64,7 +64,10 @@
       var failUrl    = window.location.origin + '/stt-pay.html?status=fail&orderId='    + encodeURIComponent(orderId);
 
       try {
-        var tossPayments = TossPayments('test_ck_mBZ1gQ4YVXBjEx6651Wj8l2KPoqN');
+        var configResponse = await fetch('/api/payment-config', { cache: 'no-store' });
+        var config = await configResponse.json();
+        if (!configResponse.ok || !config.oneTimeClientKey) throw new Error('결제 설정을 불러오지 못했습니다.');
+        var tossPayments = TossPayments(config.oneTimeClientKey);
         var payment = tossPayments.payment({ customerKey: customerKey });
         await payment.requestPayment({
           method: 'CARD',

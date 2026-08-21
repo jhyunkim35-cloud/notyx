@@ -168,7 +168,7 @@ _storage2_region_contains "$_storage2_firestore_update" "stripFirestoreNotePaylo
 # This is intentionally a Task 7 gate: the prior storage-growth pin must move
 # with the production schema, while all other STORAGE1 checks remain intact.
 assert_contains scripts/acceptance/storage-growth.spec.sh "DB_VERSION=6" "STORAGE2-5a: storage-growth gate expects DB_VERSION=6"
-assert_contains public/index.html "storage2task7" "STORAGE2-5b: final STORAGE2 cache token is normalized"
+assert_contains public/index.html "billingui3" "STORAGE2-5b: final STORAGE2 cache token is normalized"
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo

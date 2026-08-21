@@ -320,7 +320,7 @@ async function run() {
     const { repo } = repository();
     assert.equal(Object.isFrozen(repo), true);
     assert.deepEqual(Object.keys(repo).sort(), [
-      'abandonInitialRegistration', 'acquireOrderLease', 'acquireRenewalReconciliationLease', 'claimOrderReconciliationSlot', 'findSubscriptionByBillingKeyFingerprint',
+      'abandonInitialRegistration', 'acquireOrderLease', 'acquireRenewalReconciliationLease', 'claimOrderReconciliationSlot', 'findSubscriptionByBillingKeyFingerprint', 'findSubscriptionUidByBillingKeyFingerprint',
       'finalizeOrderFailure', 'finalizeOrderSuccess', 'getBillingOrder', 'getSubscription',
       'invalidateBillingMethod', 'listDueSubscriptions', 'markOrderProviderRequestStarted', 'markRenewalManualReconciliation',
       'prepareInitialRetry', 'prepareRenewalOrder', 'prepareSubscription', 'releaseOrderLease',
@@ -758,6 +758,7 @@ async function run() {
     await state.repo.prepareRenewalOrder({ uid: UID, attempt: 0 });
     const due = await state.repo.listDueSubscriptions({ at: new Date(active.subscription.currentPeriodEnd), limit: 1 });
     assert.equal(due.length, 1);
+    assert.equal(due[0].uid, UID);
     assert.deepEqual(adapter.queries.at(-1), {
       collection: 'subscriptions',
       filters: [

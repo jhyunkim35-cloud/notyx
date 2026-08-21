@@ -57,7 +57,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="/css/system.css?v=storage2task7">
+  <link rel="stylesheet" href="/css/system.css?v=billingui3">
 
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
@@ -4288,7 +4288,7 @@
 <script defer src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script defer src="https://js.tosspayments.com/v2/standard"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
-<script defer src="/js/markdown.js?v=storage2task7"></script>
+<script defer src="/js/markdown.js?v=billingui3"></script>
 </head>
 <body>
 
@@ -4389,7 +4389,7 @@
          nav. showPaymentModal('voluntary') reads getUserUsage() and switches
          to a "Pro 구독 중" thank-you panel for users who already pay, so
          the button is safe to show to everyone. -->
-    <button class="sidebar-btn" onclick="showPaymentModal('voluntary')" style="background:var(--surface3);" id="sidebarUpgradeBtn">
+    <button class="sidebar-btn" onclick="showPaymentModal('voluntary')" style="background:var(--surface3);" id="sidebarUpgradeBtn" data-upgrade-button>
       <i data-lucide="sparkles" style="color:var(--secondary);"></i>
       <span>업그레이드</span>
     </button>
@@ -4485,7 +4485,7 @@
         <button class="ny-btn ny-btn-ghost ny-btn-icon" type="button" onclick="toggleTheme()" aria-label="밝은 테마와 어두운 테마 전환">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" stroke="none"/></svg>
         </button>
-        <button class="ny-btn ny-btn-primary" type="button" onclick="loginWithGoogle()">Google로 시작하기</button>
+        <button class="ny-btn ny-btn-primary ny-nav-cta" type="button" onclick="loginWithGoogle()">Google로 시작하기</button>
       </div>
     </div>
   </header>
@@ -4500,7 +4500,7 @@
           <button class="ny-btn ny-btn-primary ny-btn-lg" type="button" onclick="loginWithGoogle()">Google로 시작하기</button>
           <a class="ny-btn ny-btn-secondary ny-btn-lg" href="#ny-features">기능 보기</a>
         </div>
-        <p class="ny-hero-note">Google 계정으로 바로 시작 · 설치 없이 브라우저에서 · 매달 노트 3개까지 무료, 이후 월 7,900원 또는 1회 500원</p>
+        <p class="ny-hero-note">Google 계정으로 바로 시작 · 설치 없이 브라우저에서 · 매달 무료 3회, 이후 월 8,900원 또는 1회 500원</p>
       </div>
     </section>
 
@@ -5151,45 +5151,45 @@
      해시가 안 맞아 로드가 실패하면 landing_motion.js가 모션 없이 최종 상태로 떨어진다. -->
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js" integrity="sha384-HOvlOYPIs/zjoIkWUGXkVmXsjr8GuZLV+Q+rcPwmJOVZVpvTSXQChiN4t9Euv9Vc" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js" integrity="sha384-P8VzCVnT9NBUkMrpcIZrJbA7EBjJvh/fJS6PmP+4nLIM284DtsImIv8D0fFjIkeh" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script defer src="/js/constants.js?v=storage2task7"></script>
-<script defer src="/js/error_autoreport.js?v=storage2task7"></script>
-<script defer src="/js/icons.js?v=storage2task7"></script>
-      <script defer src="/js/note_images.js?v=storage2task7"></script>
-      <script defer src="/js/storage.js?v=storage2task7"></script>
-      <script defer src="/js/firestore_sync.js?v=storage2task7"></script>
-<script defer src="/js/transcripts_store.js?v=storage2task7"></script>
-<script defer src="/js/api.js?v=storage2task7"></script>
-<script defer src="/js/pptx_parser.js?v=storage2task7"></script>
-<script defer src="/js/quiz.js?v=storage2task7"></script>
-<script defer src="/js/ui.js?v=storage2task7"></script>
-<script defer src="/js/viewers.js?v=storage2task7"></script>
-<script defer src="/js/demo.js?v=storage2task7"></script>
-<script defer src="/js/image_gallery.js?v=storage2task7"></script>
-<script defer src="/js/deixis.js?v=storage2task7"></script>
-<script defer src="/js/pipeline.js?v=storage2task7"></script>
-<script defer src="/js/batch.js?v=storage2task7"></script>
-<script defer src="/js/note_creation.js?v=storage2task7"></script>
-      <script defer src="/js/notes_crud.js?v=storage2task7"></script>
-<script defer src="/js/notion_viewer.js?v=storage2task7"></script>
-<script defer src="/js/notion_clipboard.js?v=storage2task7"></script>
-<script defer src="/js/folders.js?v=storage2task7"></script>
-<script defer src="/js/exam_plan.js?v=storage2task7"></script>
-<script defer src="/js/srs.js?v=storage2task7"></script>
-<script defer src="/js/timetable.js?v=storage2task7"></script>
-<script defer src="/js/srs_review.js?v=storage2task7"></script>
-<script defer src="/js/home_view.js?v=storage2task7"></script>
-<script defer src="/js/transcripts_view.js?v=storage2task7"></script>
-<script defer src="/js/bulk.js?v=storage2task7"></script>
-<script defer src="/js/firebase_auth.js?v=storage2task7"></script>
-<script defer src="/js/landing_motion.js?v=storage2task7"></script>
-<script defer src="/js/payment.js?v=storage2task7"></script>
-<script defer src="/js/recorder.js?v=storage2task7"></script>
-<script defer src="/js/groups.js?v=storage2task7"></script>
-<script defer src="/js/study_rooms.js?v=storage2task7"></script>
-<script defer src="/js/bug_report.js?v=storage2task7"></script>
-<script defer src="/js/onboarding_tour.js?v=storage2task7"></script>
-<script defer src="/js/main.js?v=storage2task7"></script>
-<script defer src="/js/main_inline.js?v=storage2task7"></script>
+<script defer src="/js/constants.js?v=billingui3"></script>
+<script defer src="/js/error_autoreport.js?v=billingui3"></script>
+<script defer src="/js/icons.js?v=billingui3"></script>
+      <script defer src="/js/note_images.js?v=billingui3"></script>
+      <script defer src="/js/storage.js?v=billingui3"></script>
+      <script defer src="/js/firestore_sync.js?v=billingui3"></script>
+<script defer src="/js/transcripts_store.js?v=billingui3"></script>
+<script defer src="/js/api.js?v=billingui3"></script>
+<script defer src="/js/pptx_parser.js?v=billingui3"></script>
+<script defer src="/js/quiz.js?v=billingui3"></script>
+<script defer src="/js/ui.js?v=billingui3"></script>
+<script defer src="/js/viewers.js?v=billingui3"></script>
+<script defer src="/js/demo.js?v=billingui3"></script>
+<script defer src="/js/image_gallery.js?v=billingui3"></script>
+<script defer src="/js/deixis.js?v=billingui3"></script>
+<script defer src="/js/pipeline.js?v=billingui3"></script>
+<script defer src="/js/batch.js?v=billingui3"></script>
+<script defer src="/js/note_creation.js?v=billingui3"></script>
+      <script defer src="/js/notes_crud.js?v=billingui3"></script>
+<script defer src="/js/notion_viewer.js?v=billingui3"></script>
+<script defer src="/js/notion_clipboard.js?v=billingui3"></script>
+<script defer src="/js/folders.js?v=billingui3"></script>
+<script defer src="/js/exam_plan.js?v=billingui3"></script>
+<script defer src="/js/srs.js?v=billingui3"></script>
+<script defer src="/js/timetable.js?v=billingui3"></script>
+<script defer src="/js/srs_review.js?v=billingui3"></script>
+<script defer src="/js/home_view.js?v=billingui3"></script>
+<script defer src="/js/transcripts_view.js?v=billingui3"></script>
+<script defer src="/js/bulk.js?v=billingui3"></script>
+<script defer src="/js/firebase_auth.js?v=billingui3"></script>
+<script defer src="/js/landing_motion.js?v=billingui3"></script>
+<script defer src="/js/payment.js?v=billingui3"></script>
+<script defer src="/js/recorder.js?v=billingui3"></script>
+<script defer src="/js/groups.js?v=billingui3"></script>
+<script defer src="/js/study_rooms.js?v=billingui3"></script>
+<script defer src="/js/bug_report.js?v=billingui3"></script>
+<script defer src="/js/onboarding_tour.js?v=billingui3"></script>
+<script defer src="/js/main.js?v=billingui3"></script>
+<script defer src="/js/main_inline.js?v=billingui3"></script>
 <div id="bulkDeleteBar">
   <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;color:var(--text-muted);">
     <input type="checkbox" id="bulkSelectAllChk" onchange="toggleBulkSelectAll(this.checked)" style="accent-color:var(--primary);width:15px;height:15px;">

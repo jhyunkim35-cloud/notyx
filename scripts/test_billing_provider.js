@@ -9,6 +9,7 @@ const {
   BillingPaymentValidationError,
   TossProviderError,
   createTossClient,
+  isOrderLookupNotFound,
   normalizeBillingIssue,
   normalizeBillingPayment,
   validateCustomerKey,
@@ -256,7 +257,7 @@ async function run() {
       [new Error('network provider message'), 'network', 'lookup_again', null, null],
       [response(400, { code: 'BAD_REQUEST', message: providerMessage }), 'http', 'rejected', 400, 'BAD_REQUEST'],
       [response(401, { code: 'UNAUTHORIZED_KEY', message: secretKey }), 'http', 'configuration', 401, 'UNAUTHORIZED_KEY'],
-      [response(404, { code: 'NOT_FOUND' }), 'http', 'lookup_again', 404, 'NOT_FOUND'],
+      [response(404, { code: 'NOT_FOUND' }), 'http', 'order_not_found', 404, 'NOT_FOUND'],
       [response(409, { code: 'DUPLICATED_ORDER_ID' }), 'http', 'lookup_again', 409, 'DUPLICATED_ORDER_ID'],
       [response(429, { code: 'RATE_LIMITED' }), 'http', 'lookup_again', 429, 'RATE_LIMITED'],
       [response(500, { code: 'SERVER_ERROR' }), 'http', 'lookup_again', 500, 'SERVER_ERROR'],
@@ -429,7 +430,10 @@ async function run() {
     const responses = [new Error('network failure'), response(404, { code: 'NOT_FOUND' })];
     const client = createTossClient({ secretKey, fetchImpl: fixtureFetch(responses, calls), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
     await expectProvider(() => client.chargeBillingKey({ billingKey: providerBillingKey, customerKey, orderId, orderName: 'Notyx', amount: 8900, idempotencyKey: 'idem' }), 'charge', 'network', 'refetch', null, null);
-    await expectProvider(() => client.refetchBillingPayment({ orderId, customerKey, amount: 8900, currency: 'KRW' }), 'lookup', 'http', 'lookup_again', 404, 'NOT_FOUND');
+    await assert.rejects(client.refetchBillingPayment({ orderId, customerKey, amount: 8900, currency: 'KRW' }), (error) => {
+      assert.equal(isOrderLookupNotFound(error), true);
+      return true;
+    });
     assert.equal(calls.length, 2);
     assert.equal(calls[0].options.headers['Idempotency-Key'], 'idem');
     assert.equal(calls[1].options.headers['Idempotency-Key'], undefined);

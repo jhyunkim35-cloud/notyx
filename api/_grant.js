@@ -14,6 +14,9 @@
 const { getAdmin } = require('./_firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const { recordUsage } = require('./_usage');
+const { FREE_MONTHLY_ANALYSES, hasProEntitlement } = require('./_billing-domain');
+
+const LEGACY_MONTHLY_AMOUNT_KRW = 7900;
 
 // STT per-use price for n thirty-minute blocks.
 // MUST stay in sync with public/js/payment.js priceFor().
@@ -24,9 +27,40 @@ function sttPriceForUnits(n) {
 // Map a Toss-verified amount to a plan, or null if it isn't a plan amount.
 // Plan amounts (500, 7900) do not collide with any STT amount (1500, 2500, …).
 function planForAmount(amount) {
-  if (amount === 7900) return 'monthly';
+  if (amount === LEGACY_MONTHLY_AMOUNT_KRW) return 'monthly';
   if (amount === 500) return 'single';
   return null;
+}
+
+function currentMonthKey(now) {
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+}
+
+// Subscription state is authoritative for recurring Pro. The legacy monthly
+// projection is consulted only when no subscription document exists.
+function resolveAnalysisEntitlement({ subscription, user = {}, now = new Date() }) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) throw new TypeError('now must be a valid Date');
+  const monthKey = currentMonthKey(now);
+  const usage = user && user.usage && typeof user.usage === 'object' ? user.usage : {};
+  const monthCount = Number.isSafeInteger(usage[monthKey]) ? usage[monthKey] : 0;
+
+  if (subscription !== null && subscription !== undefined && hasProEntitlement(subscription, now)) {
+    return { allowed: true, slot: 'monthly', monthKey };
+  }
+
+  if (subscription === null || subscription === undefined) {
+    const expiry = typeof user.planExpiry === 'string' ? new Date(user.planExpiry) : null;
+    if (user.plan === 'monthly' && expiry && !Number.isNaN(expiry.getTime())
+      && expiry.toISOString() === user.planExpiry && expiry > now) {
+      return { allowed: true, slot: 'monthly', monthKey };
+    }
+  }
+
+  if (monthCount < FREE_MONTHLY_ANALYSES) return { allowed: true, slot: 'free', monthKey };
+  if (Number.isSafeInteger(user.singlePurchases) && user.singlePurchases > 0) {
+    return { allowed: true, slot: 'single', monthKey };
+  }
+  return { allowed: false, reason: 'quota_exceeded', monthCount };
 }
 
 // Returns { ok:true, ... } on success or idempotent hit;
@@ -140,4 +174,4 @@ async function grantEntitlement({ uid, kind, minutes, paymentKey, orderId, verif
   return { ok: true, plan: verifiedPlan };
 }
 
-module.exports = { grantEntitlement, sttPriceForUnits, planForAmount };
+module.exports = { grantEntitlement, sttPriceForUnits, planForAmount, resolveAnalysisEntitlement };

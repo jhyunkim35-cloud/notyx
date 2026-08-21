@@ -40,6 +40,15 @@
         { "fieldPath": "createdBy", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "subscriptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "renewalReconciliationState", "order": "ASCENDING" },
+        { "fieldPath": "billingWorkDueAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

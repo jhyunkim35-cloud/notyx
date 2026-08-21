@@ -41,8 +41,8 @@ assert_absent   "$LC_REGION" '내보낸 페이지를 그대로 읽습니다' "LC
 assert_contains "$LC_REGION" '바로 퀴즈를 만듭니다'           "LC-2h: 노션 실체 = 바로 퀴즈 (type:'notion')"
 
 # ── ③ 무료 한도 고지 ─────────────────────────────────────
-assert_contains "$LC_REGION" '3개까지 무료' "LC-3a: 무료 월 3회 한도 고지 (payment.js:233)"
-assert_contains "$LC_REGION" '7,900'        "LC-3b: 월정액 금액 고지 (payment.js:174)"
+assert_contains "$LC_REGION" '무료 3회' "LC-3a: 무료 월 3회 한도 고지 (payment.js:233)"
+assert_contains "$LC_REGION" '8,900'        "LC-3b: 월정액 금액 고지 (payment.js:174)"
 assert_contains "$LC_REGION" '1회 500원'    "LC-3c: 1회권 금액 고지"
 
 rm -f "$LC_REGION"
