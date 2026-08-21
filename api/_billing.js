@@ -452,12 +452,21 @@ function createTossClient({ secretKey, fetchImpl = globalThis.fetch, timeoutMs =
   if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl must be a function');
   const timeouts = validateTimeouts(timeoutMs);
 
-    async function request(operation, url, method, body, timeout, idempotencyKey) {
+  async function request(operation, url, method, body, timeout, idempotencyKey) {
     const controller = new AbortController();
     let timedOut = false;
+    let rejectDeadline;
+    const deadline = new Promise((_, reject) => {
+      rejectDeadline = reject;
+    });
     const timer = setTimeout(() => {
       timedOut = true;
-      controller.abort();
+      rejectDeadline(tossError(operation, 'timeout'));
+      try {
+        controller.abort();
+      } catch (error) {
+        // Abort is best-effort; the deadline rejection is authoritative.
+      }
     }, timeout);
     const headers = {
       Authorization: `Basic ${Buffer.from(`${secretKey}:`, 'utf8').toString('base64')}`,
@@ -470,7 +479,8 @@ function createTossClient({ secretKey, fetchImpl = globalThis.fetch, timeoutMs =
       options.body = JSON.stringify(body);
       if (operation === 'charge') headers['Idempotency-Key'] = idempotencyKey;
     }
-    try {
+    const providerWork = (async () => {
+      try {
       const response = await fetchImpl(url, options);
       if (timedOut) throw tossError(operation, 'timeout');
       let status;
@@ -501,12 +511,18 @@ function createTossClient({ secretKey, fetchImpl = globalThis.fetch, timeoutMs =
         if (error instanceof TossProviderError) throw error;
         throw tossError(operation, 'invalid_response');
       }
+      } catch (error) {
+        if (timedOut) throw tossError(operation, 'timeout');
+        if (error instanceof TossProviderError) throw error;
+        if (error instanceof BillingPaymentValidationError) throw error;
+        throw tossError(operation, 'network');
+      }
+    })();
+    try {
+      return await Promise.race([providerWork, deadline]);
     } catch (error) {
       if (timedOut) throw tossError(operation, 'timeout');
-      if (error instanceof TossProviderError) throw error;
-      if (timedOut) throw tossError(operation, 'timeout');
-      if (error instanceof BillingPaymentValidationError) throw error;
-      throw tossError(operation, 'network');
+      throw error;
     } finally {
       clearTimeout(timer);
     }

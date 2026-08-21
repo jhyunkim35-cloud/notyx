@@ -92,6 +92,27 @@ function expectProvider(fn, operation, kind, disposition, httpStatus = null, pro
   });
 }
 
+async function observeBoundedTimeout(operation, operationName, realSetTimeout) {
+  const outcome = { settled: false, error: null };
+  const operationPromise = operation().then(
+    () => {
+      outcome.settled = true;
+    },
+    (error) => {
+      outcome.settled = true;
+      outcome.error = error;
+    },
+  );
+  await new Promise((resolve) => realSetTimeout(resolve, 30));
+  assert.equal(outcome.settled, true, `${operationName} did not reject before the bounded observer`);
+  assert(outcome.error instanceof TossProviderError);
+  assert.equal(outcome.error.operation, operationName);
+  assert.equal(outcome.error.kind, 'timeout');
+  assert.equal(outcome.error.disposition, operationName === 'issue' ? 'reregister' : 'lookup_again');
+  await operationPromise;
+  return outcome.error;
+}
+
 function response(status, body) {
   return {
     status,
@@ -287,6 +308,94 @@ async function run() {
       timeoutMs: { issue: 5, charge: 5, lookup: 5 },
     });
     await expectProvider(() => delayedJsonClient.refetchBillingPayment({ orderId, customerKey, amount: 8900, currency: 'KRW' }), 'lookup', 'timeout', 'lookup_again');
+  });
+
+  await test('rejects never-settling fetch and JSON with a bounded timeout and clears each deadline timer', async () => {
+    const savedSetTimeout = globalThis.setTimeout;
+    const savedClearTimeout = globalThis.clearTimeout;
+    let fetchCreated = 0;
+    let fetchCleared = 0;
+    try {
+      globalThis.setTimeout = (...args) => {
+        fetchCreated += 1;
+        return savedSetTimeout(...args);
+      };
+      globalThis.clearTimeout = (...args) => {
+        fetchCleared += 1;
+        return savedClearTimeout(...args);
+      };
+      const neverFetchClient = createTossClient({
+        secretKey,
+        fetchImpl: () => new Promise(() => {}),
+        timeoutMs: { issue: 5, charge: 5, lookup: 5 },
+      });
+      await observeBoundedTimeout(() => neverFetchClient.issueBillingKey({ authKey, customerKey }), 'issue', savedSetTimeout);
+      assert.equal(fetchCreated, 1);
+      assert.equal(fetchCleared, 1);
+    } finally {
+      globalThis.setTimeout = savedSetTimeout;
+      globalThis.clearTimeout = savedClearTimeout;
+    }
+    assert.equal(globalThis.setTimeout, savedSetTimeout);
+    assert.equal(globalThis.clearTimeout, savedClearTimeout);
+
+    let jsonCreated = 0;
+    let jsonCleared = 0;
+    try {
+      globalThis.setTimeout = (...args) => {
+        jsonCreated += 1;
+        return savedSetTimeout(...args);
+      };
+      globalThis.clearTimeout = (...args) => {
+        jsonCleared += 1;
+        return savedClearTimeout(...args);
+      };
+      const neverJsonClient = createTossClient({
+        secretKey,
+        fetchImpl: async () => ({ status: 200, json: () => new Promise(() => {}) }),
+        timeoutMs: { issue: 5, charge: 5, lookup: 5 },
+      });
+      await observeBoundedTimeout(() => neverJsonClient.refetchBillingPayment({ orderId, customerKey, amount: 8900, currency: 'KRW' }), 'lookup', savedSetTimeout);
+      assert.equal(jsonCreated, 1);
+      assert.equal(jsonCleared, 1);
+    } finally {
+      globalThis.setTimeout = savedSetTimeout;
+      globalThis.clearTimeout = savedClearTimeout;
+    }
+    assert.equal(globalThis.setTimeout, savedSetTimeout);
+    assert.equal(globalThis.clearTimeout, savedClearTimeout);
+  });
+
+  await test('handles late provider resolve and reject without changing timeout or causing unhandled rejection', async () => {
+    const savedSetTimeout = globalThis.setTimeout;
+    const unhandled = [];
+    const onUnhandled = (error) => unhandled.push(error);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const lateResolveClient = createTossClient({
+        secretKey,
+        fetchImpl: async () => {
+          await new Promise((resolve) => savedSetTimeout(resolve, 25));
+          return response(200, validIssue);
+        },
+        timeoutMs: { issue: 5, charge: 5, lookup: 5 },
+      });
+      await observeBoundedTimeout(() => lateResolveClient.issueBillingKey({ authKey, customerKey }), 'issue', savedSetTimeout);
+
+      const lateRejectClient = createTossClient({
+        secretKey,
+        fetchImpl: async () => {
+          await new Promise((resolve) => savedSetTimeout(resolve, 25));
+          throw new Error('late provider fixture rejection');
+        },
+        timeoutMs: { issue: 5, charge: 5, lookup: 5 },
+      });
+      await observeBoundedTimeout(() => lateRejectClient.issueBillingKey({ authKey, customerKey }), 'issue', savedSetTimeout);
+      await new Promise((resolve) => savedSetTimeout(resolve, 35));
+      assert.deepEqual(unhandled, []);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   await test('creates and clears exactly one real operation timer and restores instrumentation', async () => {
