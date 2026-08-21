@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 
 const billing = require('../api/_billing');
 
@@ -219,6 +220,15 @@ async function run() {
     assert.equal(calls.length, 0);
   });
 
+  await test('classifies successful non-plain provider JSON at the client boundary', async () => {
+    const issueClient = createTossClient({ secretKey, fetchImpl: fixtureFetch([response(200, null)], []), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
+    await expectProvider(() => issueClient.issueBillingKey({ authKey, customerKey }), 'issue', 'invalid_response', 'reregister');
+    const lookupClient = createTossClient({ secretKey, fetchImpl: fixtureFetch([response(200, [])], []), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
+    await expectProvider(() => lookupClient.refetchBillingPayment({ orderId, customerKey, amount: 8900, currency: 'KRW' }), 'lookup', 'invalid_response', 'lookup_again');
+    expectValidation(() => normalizeBillingIssue(null, customerKey), 'shape', 'security_mismatch', 'issue');
+    expectValidation(() => normalizeBillingPayment([], { orderId, customerKey, amount: 8900, currency: 'KRW' }), 'shape', 'security_mismatch', 'payment');
+  });
+
   await test('maps timeout, network, HTTP, malformed, and unsafe-code fixtures to safe errors', async () => {
     const cases = [
       [new Error('timeout transport'), 'network', 'lookup_again', null, null],
@@ -238,21 +248,71 @@ async function run() {
     }
     const issueClient = createTossClient({ secretKey, fetchImpl: fixtureFetch([response(401, { code: 'UNAUTHORIZED_KEY' })], []), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
     await expectProvider(() => issueClient.issueBillingKey({ authKey, customerKey }), 'issue', 'http', 'configuration', 401, 'UNAUTHORIZED_KEY');
-    const chargeClient = createTossClient({ secretKey, fetchImpl: fixtureFetch([response(503, { code: 'SERVER_ERROR' })], []), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
-    await expectProvider(() => chargeClient.chargeBillingKey({ billingKey: providerBillingKey, customerKey, orderId, orderName: 'Notyx', amount: 8900, idempotencyKey: 'idem' }), 'charge', 'http', 'refetch', 503, 'SERVER_ERROR');
+    const chargeCases = [
+      [response(400, { code: 'NOT_SUPPORTED_METHOD' }), 'rejected', 400, 'NOT_SUPPORTED_METHOD'],
+      [response(401, { code: 'UNAUTHORIZED_KEY' }), 'configuration', 401, 'UNAUTHORIZED_KEY'],
+      [response(400, { code: 'INCORRECT_BASIC_AUTH_FORMAT' }), 'configuration', 400, 'INCORRECT_BASIC_AUTH_FORMAT'],
+      [response(400, { code: 'NOT_SUPPORTED_BILLING_MERCHANT' }), 'configuration', 400, 'NOT_SUPPORTED_BILLING_MERCHANT'],
+      [response(409, { code: 'DUPLICATED_ORDER_ID' }), 'refetch', 409, 'DUPLICATED_ORDER_ID'],
+      [response(503, { code: 'SERVER_ERROR' }), 'refetch', 503, 'SERVER_ERROR'],
+    ];
+    for (const [fixture, disposition, status, code] of chargeCases) {
+      const chargeClient = createTossClient({ secretKey, fetchImpl: fixtureFetch([fixture], []), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
+      await expectProvider(() => chargeClient.chargeBillingKey({ billingKey: providerBillingKey, customerKey, orderId, orderName: 'Notyx', amount: 8900, idempotencyKey: 'idem' }), 'charge', 'http', disposition, status, code);
+    }
+    const issueMethodClient = createTossClient({ secretKey, fetchImpl: fixtureFetch([response(400, { code: 'NOT_SUPPORTED_METHOD' })], []), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
+    await expectProvider(() => issueMethodClient.issueBillingKey({ authKey, customerKey }), 'issue', 'http', 'configuration', 400, 'NOT_SUPPORTED_METHOD');
   });
 
-  await test('uses its own timeout flag and clears timers for timed-out operations', async () => {
-    const calls = [];
-    const client = createTossClient({
+  await test('enforces the owned deadline when fetch or JSON ignores AbortSignal', async () => {
+    const delayedFetchClient = createTossClient({
       secretKey,
-      fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      fetchImpl: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return response(200, validIssue);
+      },
+      timeoutMs: { issue: 5, charge: 5, lookup: 5 },
+    });
+    await expectProvider(() => delayedFetchClient.issueBillingKey({ authKey, customerKey }), 'issue', 'timeout', 'reregister');
+
+    const delayedJsonClient = createTossClient({
+      secretKey,
+      fetchImpl: async () => ({
+        status: 200,
+        async json() {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          return validPayment;
+        },
       }),
       timeoutMs: { issue: 5, charge: 5, lookup: 5 },
     });
-    await expectProvider(() => client.refetchBillingPayment({ orderId, customerKey, amount: 8900, currency: 'KRW' }), 'lookup', 'timeout', 'lookup_again', null, null);
-    assert.equal(calls.length, 0);
+    await expectProvider(() => delayedJsonClient.refetchBillingPayment({ orderId, customerKey, amount: 8900, currency: 'KRW' }), 'lookup', 'timeout', 'lookup_again');
+  });
+
+  await test('creates and clears exactly one real operation timer and restores instrumentation', async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    let created = 0;
+    let cleared = 0;
+    try {
+      globalThis.setTimeout = (...args) => {
+        created += 1;
+        return originalSetTimeout(...args);
+      };
+      globalThis.clearTimeout = (...args) => {
+        cleared += 1;
+        return originalClearTimeout(...args);
+      };
+      const client = createTossClient({ secretKey, fetchImpl: fixtureFetch([response(200, validIssue)], []), timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
+      await client.issueBillingKey({ authKey, customerKey });
+      assert.equal(created, 1);
+      assert.equal(cleared, 1);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      globalThis.clearTimeout = originalClearTimeout;
+    }
+    assert.equal(globalThis.setTimeout, originalSetTimeout);
+    assert.equal(globalThis.clearTimeout, originalClearTimeout);
   });
 
   await test('does not retry an unknown charge after an immediate lookup 404', async () => {
@@ -267,10 +327,20 @@ async function run() {
   });
 
   await test('keeps provider errors free of credentials and raw provider messages', () => {
-    const error = new TossProviderError('lookup', 'network', null, null, 'lookup_again');
-    const output = JSON.stringify(error);
+    const child = spawnSync(process.execPath, ['-e', `
+      const b = require('./api/_billing');
+      const response = { status: 400, async json() { return { code: 'BAD_REQUEST', message: '${providerMessage}', secretKey: '${secretKey}' }; } };
+      const client = b.createTossClient({ secretKey: '${secretKey}', fetchImpl: async () => response, timeoutMs: { issue: 100, charge: 100, lookup: 100 } });
+      client.refetchBillingPayment({ orderId: '${orderId}', customerKey: '${customerKey}', amount: 8900, currency: 'KRW' }).catch((error) => {
+        process.stdout.write(String(error) + '\\n' + JSON.stringify(error) + '\\n' + JSON.stringify(b.redactSensitive(error)));
+        process.stderr.write('diagnostic ' + JSON.stringify(error));
+      });
+    `], { cwd: process.cwd(), encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr);
+    const output = `${child.stdout}\n${child.stderr}`;
     for (const fixture of [authKey, providerBillingKey, customerKey, secretKey, providerMessage]) assert.equal(output.includes(fixture), false);
-    assert.equal(JSON.stringify({ error: billing.redactSensitive(error) }).includes(providerMessage), false);
+    assert.equal(output.includes('Toss lookup request failed'), true);
+    assert.equal(output.includes('TOSS_REQUEST_FAILED'), true);
   });
 }
 

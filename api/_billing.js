@@ -215,15 +215,23 @@ function isSensitiveKey(key) {
 
 function isBillingEnvelope(value) {
   if (!isPlainObject(value)) return false;
-  if (Object.keys(value).sort().join('|') !== 'ciphertext|fingerprint|iv|tag|version') return false;
-  return value.version === BILLING_ENVELOPE_VERSION && typeof value.iv === 'string' && typeof value.tag === 'string'
-    && typeof value.ciphertext === 'string' && typeof value.fingerprint === 'string';
+  return Object.keys(value).sort().join('|') === 'ciphertext|fingerprint|iv|tag|version';
 }
 
 function scrubString(value) {
   let result = value.replace(/\b(Basic|Bearer)\s+[^\s"'`]+/giu, '$1 [REDACTED]');
   result = result.replace(/([?&])((?:authKey|billingKey|customerKey|secretKey|token|[A-Za-z0-9_]*Token))=([^&#]*)/giu, '$1$2=[REDACTED]');
   return result;
+}
+
+function readDataProperty(value, key) {
+  let current = value;
+  while (current !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor) return descriptor.get || descriptor.set ? undefined : descriptor.value;
+    current = Object.getPrototypeOf(current);
+  }
+  return undefined;
 }
 
 function redactSensitive(value) {
@@ -246,13 +254,17 @@ function redactSensitive(value) {
 
     if (current instanceof Error) {
       const result = {};
-      const name = typeof current.name === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,99}$/u.test(current.name) ? current.name : undefined;
-      const code = typeof current.code === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,99}$/u.test(current.code) ? current.code : undefined;
+      const errorName = readDataProperty(current, 'name');
+      const errorCode = readDataProperty(current, 'code');
+      const errorMessage = readDataProperty(current, 'message');
+      const name = typeof errorName === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,99}$/u.test(errorName) ? errorName : undefined;
+      const code = typeof errorCode === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,99}$/u.test(errorCode) ? errorCode : undefined;
       if (name !== undefined) result.name = name;
       if (code !== undefined) result.code = code;
-      result.message = scrubString(typeof current.message === 'string' ? current.message : String(current.message));
+      result.message = scrubString(typeof errorMessage === 'string' ? errorMessage : String(errorMessage));
       for (const key of Object.keys(current)) {
         if (key === 'name' || key === 'code' || key === 'message') continue;
+        if (['stack', 'cause', 'request', 'response', 'config'].includes(key.toLowerCase())) continue;
         const descriptor = Object.getOwnPropertyDescriptor(current, key);
         if (!descriptor || descriptor.get || descriptor.set) result[key] = ACCESSOR;
         else if (isSensitiveKey(key)) result[key] = REDACTED;
@@ -264,12 +276,12 @@ function redactSensitive(value) {
     if (Array.isArray(current)) {
       const result = [];
       for (const key of Object.keys(current)) {
+        const descriptor = Object.getOwnPropertyDescriptor(current, key);
         if (/^(?:0|[1-9][0-9]*)$/u.test(key)) {
-          result[key] = clone(current[key], depth + 1);
+          result[key] = !descriptor || descriptor.get || descriptor.set ? ACCESSOR : clone(descriptor.value, depth + 1);
         } else if (isSensitiveKey(key)) {
           result[key] = REDACTED;
         } else {
-          const descriptor = Object.getOwnPropertyDescriptor(current, key);
           result[key] = !descriptor || descriptor.get || descriptor.set ? ACCESSOR : clone(descriptor.value, depth + 1);
         }
       }
@@ -400,7 +412,7 @@ function dispositionFor(operation, kind, status, providerCode) {
   }
   if (operation === 'charge') {
     if (kind === 'timeout' || kind === 'network' || isRetryableStatus(status) || providerCode === 'DUPLICATED_ORDER_ID') return 'refetch';
-    if (status === 401 || AUTH_CONFIGURATION_CODES.has(providerCode) || providerCode === 'NOT_SUPPORTED_BILLING_MERCHANT') return 'configuration';
+    if (status === 401 || providerCode === 'UNAUTHORIZED_KEY' || providerCode === 'INCORRECT_BASIC_AUTH_FORMAT' || providerCode === 'NOT_SUPPORTED_BILLING_MERCHANT') return 'configuration';
     return 'rejected';
   }
   if (kind === 'timeout' || kind === 'network' || status === 404 || isRetryableStatus(status)) return 'lookup_again';
@@ -460,6 +472,7 @@ function createTossClient({ secretKey, fetchImpl = globalThis.fetch, timeoutMs =
     }
     try {
       const response = await fetchImpl(url, options);
+      if (timedOut) throw tossError(operation, 'timeout');
       let status;
       try {
         status = validateResponseStatus(response);
@@ -473,16 +486,23 @@ function createTossClient({ secretKey, fetchImpl = globalThis.fetch, timeoutMs =
         } catch (error) {
           parsed = null;
         }
+        if (timedOut) throw tossError(operation, 'timeout');
         throw tossError(operation, 'http', status, providerCodeFrom(parsed));
       }
       if (operation === 'charge') return undefined;
       try {
         if (typeof response.json !== 'function') throw new Error('json');
-        return await response.json();
+        const parsed = await response.json();
+        if (timedOut) throw tossError(operation, 'timeout');
+        if ((operation === 'issue' || operation === 'lookup') && !isPlainObject(parsed)) throw tossError(operation, 'invalid_response');
+        return parsed;
       } catch (error) {
+        if (timedOut) throw tossError(operation, 'timeout');
+        if (error instanceof TossProviderError) throw error;
         throw tossError(operation, 'invalid_response');
       }
     } catch (error) {
+      if (timedOut) throw tossError(operation, 'timeout');
       if (error instanceof TossProviderError) throw error;
       if (timedOut) throw tossError(operation, 'timeout');
       if (error instanceof BillingPaymentValidationError) throw error;

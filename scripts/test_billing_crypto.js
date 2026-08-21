@@ -192,4 +192,61 @@ test('keeps safe errors and redacted fixtures free of every credential fixture',
   }
 });
 
+test('omits security-sensitive Error fields and never invokes envelope or numeric-array accessors', () => {
+  const marker = 'error_fixture_marker';
+  const error = new Error('safe message');
+  for (const key of ['stack', 'cause', 'request', 'response', 'config']) {
+    Object.defineProperty(error, key, { enumerable: true, value: { marker } });
+  }
+  error.safe = 'kept';
+  const redactedError = redactSensitive(error);
+  for (const key of ['stack', 'cause', 'request', 'response', 'config']) {
+    assert.equal(Object.prototype.hasOwnProperty.call(redactedError, key), false);
+  }
+  assert.equal(redactedError.safe, 'kept');
+  assert.equal(JSON.stringify(redactedError).includes(marker), false);
+
+  let envelopeGetterCalls = 0;
+  const accessorEnvelope = {};
+  for (const key of ['version', 'iv', 'tag', 'ciphertext', 'fingerprint']) {
+    Object.defineProperty(accessorEnvelope, key, {
+      enumerable: true,
+      get() {
+        envelopeGetterCalls += 1;
+        return key === 'version' ? 2 : marker;
+      },
+    });
+  }
+  assert.equal(redactSensitive(accessorEnvelope), '[REDACTED]');
+  assert.equal(envelopeGetterCalls, 0);
+
+  let arrayGetterCalls = 0;
+  const accessorArray = [];
+  Object.defineProperty(accessorArray, '0', {
+    enumerable: true,
+    get() {
+      arrayGetterCalls += 1;
+      return marker;
+    },
+  });
+  const redactedArray = redactSensitive(accessorArray);
+  assert.equal(redactedArray[0], '[Accessor]');
+  assert.equal(arrayGetterCalls, 0);
+
+  let errorGetterCalls = 0;
+  const accessorError = new Error('fallback');
+  for (const key of ['name', 'message', 'code']) {
+    Object.defineProperty(accessorError, key, {
+      enumerable: true,
+      get() {
+        errorGetterCalls += 1;
+        return marker;
+      },
+    });
+  }
+  const redactedAccessorError = redactSensitive(accessorError);
+  assert.equal(errorGetterCalls, 0);
+  assert.equal(JSON.stringify(redactedAccessorError).includes(marker), false);
+});
+
 process.stdout.write(`${passed} billing crypto tests passed\n`);
